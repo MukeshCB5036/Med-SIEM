@@ -1,0 +1,133 @@
+erDiagram
+    ORGANIZATIONS ||--o{ USERS : "belongs to"
+    ORGANIZATIONS ||--o{ ASSETS : "owns"
+    
+    USERS }|--|{ ROLES : "user_roles"
+    ROLES }|--|{ PERMISSIONS : "role_permissions"
+    
+    ASSETS ||--o{ AGENTS : "monitors"
+    ASSETS ||--o{ NORMALIZED_EVENTS : "generates"
+    
+    AGENTS ||--o{ RAW_LOGS : "ingests"
+    RAW_LOGS ||--|| NORMALIZED_EVENTS : "normalizes to"
+    
+    DETECTION_RULES ||--o{ ALERTS : "triggers"
+    NORMALIZED_EVENTS ||--o{ ALERTS : "associates with"
+    
+    ALERTS }|--|{ INCIDENTS : "incident_alerts"
+    USERS ||--o{ INCIDENTS : "assigned_to"
+    INCIDENTS ||--o{ INCIDENT_COMMENTS : "has"
+    USERS ||--o{ INCIDENT_COMMENTS : "authored_by"
+    
+    ORGANIZATIONS {
+        uuid id PK
+        string name UK
+        string code UK
+        boolean hipaa_bba_signed
+        boolean is_active
+        datetime created_at
+    }
+
+    USERS {
+        uuid id PK
+        uuid org_id FK
+        string email UK
+        string password_hash
+        string full_name
+        boolean is_active
+        boolean is_superuser
+        boolean email_verified
+        boolean mfa_enabled
+        string otp_hash
+        datetime otp_expires_at
+        integer failed_login_attempts
+        boolean is_locked
+    }
+
+    ROLES {
+        uuid id PK
+        string name UK
+        string description
+        boolean is_system_role
+    }
+
+    PERMISSIONS {
+        uuid id PK
+        string name UK
+        string module
+        string description
+    }
+
+    ASSETS {
+        uuid id PK
+        uuid org_id FK
+        string hostname UK
+        string asset_name
+        string asset_type
+        string ip_address
+        string criticality
+        string status
+    }
+
+    AGENTS {
+        uuid id PK
+        uuid asset_id FK
+        string agent_version
+        string os_type
+        string status
+        datetime last_seen_at
+    }
+
+    RAW_LOGS {
+        uuid id PK
+        string source_name
+        text raw_content
+        datetime created_at
+    }
+
+    NORMALIZED_EVENTS {
+        uuid id PK
+        uuid raw_log_id FK
+        uuid asset_id FK
+        string event_type
+        string severity
+        string hostname
+        datetime timestamp
+    }
+
+    DETECTION_RULES {
+        uuid id PK
+        string name UK
+        string severity
+        string rule_type
+        text conditions
+        string mitre_technique
+        boolean enabled
+    }
+
+    ALERTS {
+        uuid id PK
+        uuid rule_id FK
+        uuid event_id FK
+        uuid assigned_user_id FK
+        string title
+        string severity
+        string status
+    }
+
+    INCIDENTS {
+        uuid id PK
+        uuid assigned_user_id FK
+        string title
+        string severity
+        string status
+        text summary
+    }
+
+    INCIDENT_COMMENTS {
+        uuid id PK
+        uuid incident_id FK
+        uuid user_id FK
+        text comment
+        datetime created_at
+    }

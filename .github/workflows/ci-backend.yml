@@ -1,0 +1,77 @@
+name: Complete Platform Integration & Build Verification
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main, develop ]
+
+jobs:
+  backend-quality-and-build:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: medsiem_db
+          POSTGRES_USER: medsiem_user
+          POSTGRES_PASSWORD: medsiem_secure_password_2026
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run Bandit Security Scanner
+        run: |
+          bandit -r backend/app -x backend/tests
+
+      - name: Run Backend Pytest Suite
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: medsiem_user
+          POSTGRES_PASSWORD: medsiem_secure_password_2026
+          POSTGRES_DB: medsiem_db
+          SECRET_KEY: test_secret_key_ci_cd_medsiem_min32chars
+        run: |
+          cd backend
+          pytest
+
+  frontend-build-verification:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install Dependencies & Build
+        run: |
+          cd frontend
+          npm ci
+          npm run build

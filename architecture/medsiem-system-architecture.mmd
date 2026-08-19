@@ -1,0 +1,57 @@
+graph TB
+    subgraph Client_Layer ["CLIENT LAYER"]
+        WEB["MedSIEM Web Application\n(Next.js 14 / React)"]
+        MOBILE["MedSIEM Android Mobile App\n(React Native)"]
+        AGENT["MedSIEM Endpoint Security Agent\n(Python 3.12 Host Daemon)"]
+    end
+
+    subgraph Application_Layer ["APPLICATION LAYER (FastAPI Backend)"]
+        GATEWAY["Security Headers & Tracing Middleware"]
+        AUTH["Authentication & MFA Service\n(JWT / Email OTP / Password Lockout)"]
+        RBAC["RBAC & Permission Enforcer\n(Role-Based Access Control)"]
+        INGEST["Event Ingestion & Normalizer Pipeline"]
+        DETECTION["Detection Rules Engine"]
+        ALERT_MGR["Alert Manager"]
+        INCIDENT_MGR["Incident Manager"]
+        ASSET_MGR["Asset & Agent Manager"]
+    end
+
+    subgraph Data_Layer ["DATA & STORAGE INFRASTRUCTURE"]
+        POSTGRES[("PostgreSQL 16\n(Relational Metadata, Users, Rules, Alerts, Incidents)")]
+        OPENSEARCH[("OpenSearch 2.13.0\n(Indexed Event Stream & Full-Text Log Search)")]
+        REDIS[("Redis 7\n(Session Cache & Rate Limiting)")]
+        MINIO[("MinIO Object Storage\n(Raw Log Archives & Attachments)")]
+    end
+
+    subgraph Deployment_Stack ["DOCKER COMPOSE ORCHESTRATION"]
+        C_FRONTEND["medsiem-frontend (Port 3000)"]
+        C_BACKEND["medsiem-backend (Port 8000)"]
+        C_POSTGRES["medsiem-postgres (Port 5432)"]
+        C_OPENSEARCH["medsiem-opensearch (Port 9200)"]
+        C_REDIS["medsiem-redis (Port 6379)"]
+        C_MINIO["medsiem-minio (Port 9000/9001)"]
+    end
+
+    %% Flow Connections
+    WEB -->|HTTP/HTTPS REST API| GATEWAY
+    MOBILE -->|HTTP REST API| GATEWAY
+    AGENT -->|Heartbeat & Log Ingest| INGEST
+
+    GATEWAY --> AUTH
+    AUTH --> RBAC
+    RBAC --> ASSET_MGR
+    RBAC --> INGEST
+    RBAC --> DETECTION
+    RBAC --> ALERT_MGR
+    RBAC --> INCIDENT_MGR
+
+    INGEST -->|Write Raw Logs| MINIO
+    INGEST -->|Write Normalized Events| POSTGRES
+    INGEST -->|Index Logs| OPENSEARCH
+    AUTH -->|Session Cache| REDIS
+
+    DETECTION -->|Evaluate Rules| POSTGRES
+    DETECTION -->|Trigger| ALERT_MGR
+    ALERT_MGR -->|Escalate| INCIDENT_MGR
+    ALERT_MGR -->|Store Alerts| POSTGRES
+    INCIDENT_MGR -->|Store Incidents| POSTGRES
