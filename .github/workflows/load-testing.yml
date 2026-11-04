@@ -1,0 +1,149 @@
+name: MedSIEM API Load & Performance Testing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  load-test:
+    name: Execute k6 API Load Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: medsiem_db
+          POSTGRES_USER: medsiem_user
+          POSTGRES_PASSWORD: medsiem_secure_password_2026
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run Database Migrations & Seed Baseline
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: medsiem_user
+          POSTGRES_PASSWORD: medsiem_secure_password_2026
+          POSTGRES_DB: medsiem_db
+          SECRET_KEY: medsiem_load_testing_secret_key_ci_32bytes!
+        run: |
+          cd backend
+          alembic upgrade head
+          python3 -c "
+          from app.db.session import SessionLocal
+          from app.models.user import User
+          from app.core.security import get_password_hash
+          db = SessionLocal()
+          try:
+              admin = db.query(User).filter(User.email == 'admin@medsiem.org').first()
+              if not admin:
+                  admin = User(
+                      email='admin@medsiem.org',
+                      hashed_password=get_password_hash('SuperAdmin123!'),
+                      full_name='Super Admin',
+                      role='super_admin',
+                      is_active=True,
+                      is_verified=True,
+                  )
+                  db.add(admin)
+                  db.commit()
+                  print('Admin user seeded successfully.')
+              else:
+                  print('Admin user already exists.')
+          finally:
+              db.close()
+          "
+
+      - name: Start FastAPI Backend Service
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: medsiem_user
+          POSTGRES_PASSWORD: medsiem_secure_password_2026
+          POSTGRES_DB: medsiem_db
+          SECRET_KEY: medsiem_load_testing_secret_key_ci_32bytes!
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          ENVIRONMENT: test
+        run: |
+          cd backend
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo "Waiting for FastAPI backend to become healthy..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/health | grep -q "status"; then
+              echo "FastAPI backend is ready!"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "FastAPI backend failed to start in time"
+          exit 1
+
+      - name: Install k6
+        run: |
+          sudo gpg -k
+          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69 || true
+          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
+          sudo apt-get update || true
+          sudo apt-get install -y k6 || {
+            echo "Falling back to binary install of k6..."
+            curl -sL https://github.com/grafana/k6/releases/download/v0.49.0/k6-v0.49.0-linux-amd64.tar.gz | tar -xz -C /tmp
+            sudo mv /tmp/k6-v0.49.0-linux-amd64/k6 /usr/local/bin/
+          }
+          k6 version
+
+      - name: Execute k6 API Load Test Suite
+        env:
+          API_BASE_URL: http://localhost:8000
+        run: |
+          mkdir -p test-results/load
+          k6 run tests/performance/k6_load_test.js 2>&1 | tee test-results/load/k6-execution.log
+
+      - name: Publish Load Testing Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: medsiem-load-test-results
+          path: |
+            test-results/load/
+          retention-days: 14
+
+      - name: Append Load Testing Summary to Job Summary
+        if: always()
+        run: |
+          if [ -f test-results/load/summary.md ]; then
+            cat test-results/load/summary.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### k6 Load Testing Execution" >> $GITHUB_STEP_SUMMARY
+            echo "Log file available in artifacts: medsiem-load-test-results" >> $GITHUB_STEP_SUMMARY
+          fi

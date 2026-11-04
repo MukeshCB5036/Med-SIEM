@@ -4,16 +4,19 @@
  * Prerequisites for execution:
  * 1. Start Appium Server: `npx appium`
  * 2. Start Android Emulator / Connect Android Device: `adb devices`
- * 3. Run Test Suite: `npx wdio tests/mobile/wdio.conf.js`
+ * 3. Run Test Suite: `node tests/mobile/run_appium.js` or `npm test`
  */
 
 const { remote } = require('webdriverio');
+const path = require('path');
+
+const apkPath = process.env.APP_PATH || path.resolve(__dirname, '../../android/android/app/build/outputs/apk/debug/app-debug.apk');
 
 const capabilities = {
   platformName: 'Android',
   'appium:automationName': 'UiAutomator2',
-  'appium:deviceName': 'Android Emulator',
-  'appium:app': './android/app/build/outputs/apk/debug/app-debug.apk',
+  'appium:deviceName': process.env.DEVICE_NAME || 'Android Emulator',
+  'appium:app': apkPath,
   'appium:appPackage': 'com.medsiemmobile',
   'appium:appActivity': '.MainActivity',
   'appium:noReset': false,
@@ -21,8 +24,8 @@ const capabilities = {
 };
 
 const wdioOptions = {
-  hostname: '127.0.0.1',
-  port: 4723,
+  hostname: process.env.APPIUM_HOST || '127.0.0.1',
+  port: parseInt(process.env.APPIUM_PORT || '4723', 10),
   logLevel: 'info',
   capabilities,
 };

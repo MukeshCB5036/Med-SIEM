@@ -1,0 +1,12 @@
+{
+  "name": "medsiem-appium-mobile-testing",
+  "version": "1.0.0",
+  "description": "MedSIEM Native React Native Android Appium Automated E2E Testing Suite",
+  "main": "run_appium.js",
+  "scripts": {
+    "test": "node run_appium.js"
+  },
+  "dependencies": {
+    "webdriverio": "^8.38.0"
+  }
+}

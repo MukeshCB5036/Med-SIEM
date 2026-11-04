@@ -1,0 +1,12 @@
+{
+  "name": "medsiem-selenium-e2e",
+  "version": "1.0.0",
+  "description": "MedSIEM Selenium Web UI Automated E2E Testing Suite",
+  "main": "selenium_test.js",
+  "scripts": {
+    "test": "node selenium_test.js"
+  },
+  "dependencies": {
+    "selenium-webdriver": "^4.20.0"
+  }
+}

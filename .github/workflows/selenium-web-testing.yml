@@ -1,0 +1,176 @@
+name: MedSIEM Selenium Web Testing
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  selenium-web-e2e:
+    name: Execute Selenium Headless Chrome Web Test Suite
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_DB: medsiem_db
+          POSTGRES_USER: medsiem_user
+          POSTGRES_PASSWORD: medsiem_secure_password_2026
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      # ------------------------------------------------------------------------
+      # 1. SETUP PYTHON & FASTAPI BACKEND
+      # ------------------------------------------------------------------------
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install Backend Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+
+      - name: Run Database Migrations & Seed Baseline Super Admin
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: medsiem_user
+          POSTGRES_PASSWORD: medsiem_secure_password_2026
+          POSTGRES_DB: medsiem_db
+          SECRET_KEY: medsiem_selenium_testing_secret_key_ci_32bytes!
+        run: |
+          cd backend
+          alembic upgrade head
+          python3 -c "
+          from app.db.session import SessionLocal
+          from app.models.user import User
+          from app.core.security import get_password_hash
+          db = SessionLocal()
+          try:
+              admin = db.query(User).filter(User.email == 'admin@medsiem.org').first()
+              if not admin:
+                  admin = User(
+                      email='admin@medsiem.org',
+                      hashed_password=get_password_hash('SuperAdmin123!'),
+                      full_name='Super Admin',
+                      role='super_admin',
+                      is_active=True,
+                      is_verified=True,
+                  )
+                  db.add(admin)
+                  db.commit()
+                  print('Admin user seeded.')
+              else:
+                  print('Admin user already exists.')
+          finally:
+              db.close()
+          "
+
+      - name: Start FastAPI Backend Service
+        env:
+          POSTGRES_SERVER: localhost
+          POSTGRES_PORT: 5432
+          POSTGRES_USER: medsiem_user
+          POSTGRES_PASSWORD: medsiem_secure_password_2026
+          POSTGRES_DB: medsiem_db
+          SECRET_KEY: medsiem_selenium_testing_secret_key_ci_32bytes!
+          REDIS_HOST: localhost
+          REDIS_PORT: 6379
+          ENVIRONMENT: test
+        run: |
+          cd backend
+          uvicorn app.main:app --host 0.0.0.0 --port 8000 &
+          echo "Waiting for FastAPI backend to respond..."
+          for i in {1..30}; do
+            if curl -s http://localhost:8000/health | grep -q "status"; then
+              echo "FastAPI backend is ready!"
+              break
+            fi
+            sleep 1
+          done
+
+      # ------------------------------------------------------------------------
+      # 2. SETUP NODE.JS & NEXT.JS FRONTEND
+      # ------------------------------------------------------------------------
+      - name: Set up Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Build and Start Next.js Frontend
+        env:
+          NEXT_PUBLIC_API_URL: http://localhost:8000/api/v1
+        run: |
+          cd frontend
+          npm ci
+          npm run build
+          npm start -- -p 3000 &
+          echo "Waiting for Next.js frontend on port 3000..."
+          for i in {1..30}; do
+            if curl -s -I http://localhost:3000/login | grep -q "200\|307\|308"; then
+              echo "Next.js frontend is ready!"
+              break
+            fi
+            sleep 1
+          done
+
+      # ------------------------------------------------------------------------
+      # 3. INSTALL TEST RUNNER DEPENDENCIES & RUN SELENIUM TESTS
+      # ------------------------------------------------------------------------
+      - name: Install Selenium Test Dependencies
+        run: |
+          cd tests/e2e
+          npm install
+
+      - name: Execute Selenium Browser Automation Suite
+        env:
+          FRONTEND_URL: http://localhost:3000
+          BACKEND_URL: http://localhost:8000
+        run: |
+          mkdir -p test-results/selenium/screenshots
+          node tests/e2e/selenium_test.js 2>&1 | tee test-results/selenium/execution.log
+
+      # ------------------------------------------------------------------------
+      # 4. PUBLISH SELENIUM TEST ARTIFACTS
+      # ------------------------------------------------------------------------
+      - name: Publish Selenium Testing Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: medsiem-selenium-test-results
+          path: |
+            test-results/selenium/
+          retention-days: 14
+
+      - name: Append Selenium Summary to Job Summary
+        if: always()
+        run: |
+          if [ -f test-results/selenium/summary.md ]; then
+            cat test-results/selenium/summary.md >> $GITHUB_STEP_SUMMARY
+          else
+            echo "### Selenium Web Testing Execution" >> $GITHUB_STEP_SUMMARY
+            echo "Results available in artifacts: medsiem-selenium-test-results" >> $GITHUB_STEP_SUMMARY
+          fi
