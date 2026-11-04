@@ -17,19 +17,19 @@ jobs:
     timeout-minutes: 45
 
     steps:
-      - name: Checkout Code
+      # ── ACTION 1: actions/checkout@v4 ──────────────────────────────────────
+      - name: "Action: Checkout Repository Code"
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------------------
-      # 1. SETUP BUILD PREREQUISITES
-      # ------------------------------------------------------------------------
-      - name: Set up JDK 17
+      # ── ACTION 2: actions/setup-java@v4 ────────────────────────────────────
+      - name: "Action: Setup JDK 17 (Zulu)"
         uses: actions/setup-java@v4
         with:
           distribution: 'zulu'
           java-version: '17'
 
-      - name: Set up Node.js 20
+      # ── ACTION 3: actions/setup-node@v4 ────────────────────────────────────
+      - name: "Action: Setup Node.js 20"
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -38,9 +38,6 @@ jobs:
         run: |
           mkdir -p test-results/appium/screenshots
 
-      # ------------------------------------------------------------------------
-      # 2. BUILD NATIVE ANDROID DEBUG APK
-      # ------------------------------------------------------------------------
       - name: Install Android JavaScript Dependencies
         run: |
           cd android
@@ -60,9 +57,6 @@ jobs:
             exit 1
           fi
 
-      # ------------------------------------------------------------------------
-      # 3. INSTALL APPIUM & DRIVERS
-      # ------------------------------------------------------------------------
       - name: Install Appium & UiAutomator2 Driver
         run: |
           npm install -g appium@2.11.2
@@ -73,10 +67,8 @@ jobs:
           cd tests/mobile
           npm install
 
-      # ------------------------------------------------------------------------
-      # 4. LAUNCH ANDROID EMULATOR & EXECUTE APPIUM SUITE
-      # ------------------------------------------------------------------------
-      - name: Run Appium Tests in Android Emulator
+      # ── ACTION 4: reactivecircus/android-emulator-runner@v2 ────────────────
+      - name: "Action: Run Appium Tests in Android Emulator"
         uses: reactivecircus/android-emulator-runner@v2
         with:
           api-level: 33
@@ -97,24 +89,33 @@ jobs:
 
             kill $APPIUM_PID 2>/dev/null || true
 
-      # ------------------------------------------------------------------------
-      # 5. PUBLISH APPIUM TEST ARTIFACTS
-      # ------------------------------------------------------------------------
-      - name: Publish Appium Android Test Artifacts
+      # ── GENERATE EXCEL REPORT ──────────────────────────────────────────────
+      - name: Install Python & Generate Appium Excel Test Report
+        if: always()
+        run: |
+          python3 -m pip install openpyxl --quiet
+          python3 scripts/generate_excel_reports.py
+
+      # ── ACTION 5: actions/upload-artifact@v4 ───────────────────────────────
+      - name: "Action: Upload Appium Test Artifacts & Excel Report"
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: medsiem-appium-test-results
           path: |
             test-results/appium/
-          retention-days: 14
+            test-results/Excel/
+          retention-days: 30
 
       - name: Append Appium Summary to Job Summary
         if: always()
         run: |
+          echo "## 📱 Appium Android Testing Results" >> $GITHUB_STEP_SUMMARY
           if [ -f test-results/appium/summary.md ]; then
             cat test-results/appium/summary.md >> $GITHUB_STEP_SUMMARY
           else
-            echo "### Appium Android Automation Execution" >> $GITHUB_STEP_SUMMARY
-            echo "Execution logs and results available in artifacts: medsiem-appium-test-results" >> $GITHUB_STEP_SUMMARY
+            echo "Results available in artifacts: medsiem-appium-test-results" >> $GITHUB_STEP_SUMMARY
           fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Excel Report" >> $GITHUB_STEP_SUMMARY
+          echo "Download the Excel test report from the **medsiem-appium-test-results** artifact." >> $GITHUB_STEP_SUMMARY

@@ -57,7 +57,8 @@ pnpm-debug.log*
 htmlcov/
 coverage/
 playwright-report/
-test-results/
+test-results/*
+!test-results/Excel/
 
 # IDE
 .vscode/

@@ -34,10 +34,12 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
-      - name: Checkout Code
+      # ── ACTION 1: actions/checkout@v4 ──────────────────────────────────────
+      - name: "Action: Checkout Repository Code"
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.12
+      # ── ACTION 2: actions/setup-python@v5 ──────────────────────────────────
+      - name: "Action: Setup Python 3.12"
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -109,41 +111,41 @@ jobs:
           echo "FastAPI backend failed to start in time"
           exit 1
 
-      - name: Install k6
-        run: |
-          sudo gpg -k
-          sudo gpg --no-default-keyring --keyring /usr/share/keyrings/k6-archive-keyring.gpg --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys C5AD17C747E3415A3642D57D77C6C491D6AC1D69 || true
-          echo "deb [signed-by=/usr/share/keyrings/k6-archive-keyring.gpg] https://dl.k6.io/deb stable main" | sudo tee /etc/apt/sources.list.d/k6.list
-          sudo apt-get update || true
-          sudo apt-get install -y k6 || {
-            echo "Falling back to binary install of k6..."
-            curl -sL https://github.com/grafana/k6/releases/download/v0.49.0/k6-v0.49.0-linux-amd64.tar.gz | tar -xz -C /tmp
-            sudo mv /tmp/k6-v0.49.0-linux-amd64/k6 /usr/local/bin/
-          }
-          k6 version
-
-      - name: Execute k6 API Load Test Suite
+      # ── ACTION 3: grafana/k6-action@v0.3.1 ────────────────────────────────
+      - name: "Action: Execute k6 Load Test via Grafana Action"
+        uses: grafana/k6-action@v0.3.1
         env:
           API_BASE_URL: http://localhost:8000
-        run: |
-          mkdir -p test-results/load
-          k6 run tests/performance/k6_load_test.js 2>&1 | tee test-results/load/k6-execution.log
+        with:
+          filename: tests/performance/k6_load_test.js
 
-      - name: Publish Load Testing Artifacts
+      # ── GENERATE EXCEL REPORT ──────────────────────────────────────────────
+      - name: Generate Load Testing Excel Report
+        if: always()
+        run: |
+          pip install openpyxl --quiet
+          python3 scripts/generate_excel_reports.py
+
+      # ── ACTION 4: actions/upload-artifact@v4 ───────────────────────────────
+      - name: "Action: Upload Load Test Artifacts & Excel Report"
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: medsiem-load-test-results
           path: |
             test-results/load/
-          retention-days: 14
+            test-results/Excel/
+          retention-days: 30
 
       - name: Append Load Testing Summary to Job Summary
         if: always()
         run: |
+          echo "## ⚡ k6 Load & Performance Testing Results" >> $GITHUB_STEP_SUMMARY
           if [ -f test-results/load/summary.md ]; then
             cat test-results/load/summary.md >> $GITHUB_STEP_SUMMARY
           else
-            echo "### k6 Load Testing Execution" >> $GITHUB_STEP_SUMMARY
-            echo "Log file available in artifacts: medsiem-load-test-results" >> $GITHUB_STEP_SUMMARY
+            echo "Results available in artifacts: medsiem-load-test-results" >> $GITHUB_STEP_SUMMARY
           fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Excel Report" >> $GITHUB_STEP_SUMMARY
+          echo "Download the Excel test report from the **medsiem-load-test-results** artifact." >> $GITHUB_STEP_SUMMARY

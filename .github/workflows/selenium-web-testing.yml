@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   selenium-web-e2e:
-    name: Execute Selenium Headless Chrome Web Test Suite
+    name: Selenium Headless Chrome Web Test Suite
     runs-on: ubuntu-latest
     timeout-minutes: 25
 
@@ -34,13 +34,12 @@ jobs:
         options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
 
     steps:
-      - name: Checkout Code
+      # ── ACTION 1: actions/checkout@v4 ──────────────────────────────────────
+      - name: "Action: Checkout Repository Code"
         uses: actions/checkout@v4
 
-      # ------------------------------------------------------------------------
-      # 1. SETUP PYTHON & FASTAPI BACKEND
-      # ------------------------------------------------------------------------
-      - name: Set up Python 3.12
+      # ── ACTION 2: actions/setup-python@v5 ──────────────────────────────────
+      - name: "Action: Setup Python 3.12"
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
@@ -51,7 +50,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r backend/requirements.txt
 
-      - name: Run Database Migrations & Seed Baseline Super Admin
+      - name: Run Database Migrations & Seed Super Admin
         env:
           POSTGRES_SERVER: localhost
           POSTGRES_PORT: 5432
@@ -101,7 +100,7 @@ jobs:
         run: |
           cd backend
           uvicorn app.main:app --host 0.0.0.0 --port 8000 &
-          echo "Waiting for FastAPI backend to respond..."
+          echo "Waiting for FastAPI backend..."
           for i in {1..30}; do
             if curl -s http://localhost:8000/health | grep -q "status"; then
               echo "FastAPI backend is ready!"
@@ -110,10 +109,8 @@ jobs:
             sleep 1
           done
 
-      # ------------------------------------------------------------------------
-      # 2. SETUP NODE.JS & NEXT.JS FRONTEND
-      # ------------------------------------------------------------------------
-      - name: Set up Node.js 20
+      # ── ACTION 3: actions/setup-node@v4 ────────────────────────────────────
+      - name: "Action: Setup Node.js 20"
         uses: actions/setup-node@v4
         with:
           node-version: '20'
@@ -137,9 +134,6 @@ jobs:
             sleep 1
           done
 
-      # ------------------------------------------------------------------------
-      # 3. INSTALL TEST RUNNER DEPENDENCIES & RUN SELENIUM TESTS
-      # ------------------------------------------------------------------------
       - name: Install Selenium Test Dependencies
         run: |
           cd tests/e2e
@@ -153,24 +147,33 @@ jobs:
           mkdir -p test-results/selenium/screenshots
           node tests/e2e/selenium_test.js 2>&1 | tee test-results/selenium/execution.log
 
-      # ------------------------------------------------------------------------
-      # 4. PUBLISH SELENIUM TEST ARTIFACTS
-      # ------------------------------------------------------------------------
-      - name: Publish Selenium Testing Artifacts
+      # ── GENERATE EXCEL REPORT ──────────────────────────────────────────────
+      - name: Generate Selenium Excel Test Report
+        if: always()
+        run: |
+          pip install openpyxl --quiet
+          python3 scripts/generate_excel_reports.py
+
+      # ── ACTION 4: actions/upload-artifact@v4 ───────────────────────────────
+      - name: "Action: Upload Selenium Test Artifacts & Excel Report"
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: medsiem-selenium-test-results
           path: |
             test-results/selenium/
-          retention-days: 14
+            test-results/Excel/
+          retention-days: 30
 
       - name: Append Selenium Summary to Job Summary
         if: always()
         run: |
+          echo "## 🌐 Selenium Web Testing Results" >> $GITHUB_STEP_SUMMARY
           if [ -f test-results/selenium/summary.md ]; then
             cat test-results/selenium/summary.md >> $GITHUB_STEP_SUMMARY
           else
-            echo "### Selenium Web Testing Execution" >> $GITHUB_STEP_SUMMARY
             echo "Results available in artifacts: medsiem-selenium-test-results" >> $GITHUB_STEP_SUMMARY
           fi
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📊 Excel Report" >> $GITHUB_STEP_SUMMARY
+          echo "Download the Excel test report from the **medsiem-selenium-test-results** artifact." >> $GITHUB_STEP_SUMMARY
