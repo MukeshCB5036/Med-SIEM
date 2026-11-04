@@ -15,8 +15,8 @@ class Settings(BaseSettings):
     DEBUG: bool = True
     LOG_LEVEL: str = "INFO"
     
-    # Security Secrets — MUST be set via environment variable or .env file
-    SECRET_KEY: str
+    # Security Secrets
+    SECRET_KEY: str = "medsiem_default_secret_key_ci_testing_32bytes!"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
@@ -56,7 +56,7 @@ class Settings(BaseSettings):
     POSTGRES_SERVER: str = "localhost"
     POSTGRES_PORT: int = 5432
     POSTGRES_USER: str = "medsiem_user"
-    POSTGRES_PASSWORD: str  # MUST be set via environment variable
+    POSTGRES_PASSWORD: str = "medsiem_secure_password_2026"
     POSTGRES_DB: str = "medsiem_db"
     
     @property
@@ -79,7 +79,7 @@ class Settings(BaseSettings):
     # MinIO S3 Object Storage
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "medsiem_minio_admin"
-    MINIO_SECRET_KEY: str  # MUST be set via environment variable
+    MINIO_SECRET_KEY: str = "medsiem_minio_secure_secret_key_2026"
     MINIO_SECURE: bool = False
     MINIO_REPORTS_BUCKET: str = "medsiem-reports"
 

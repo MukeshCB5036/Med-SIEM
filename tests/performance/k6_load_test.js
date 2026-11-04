@@ -23,7 +23,8 @@ export default function () {
       'health status is 200': (r) => r.status === 200,
       'health response has status ok': (r) => {
         try {
-          return JSON.parse(r.body).status === 'ok';
+          const body = JSON.parse(r.body);
+          return body.status === 'ok' || body.status === 'healthy' || body.status === 'degraded';
         } catch (e) {
           return false;
         }

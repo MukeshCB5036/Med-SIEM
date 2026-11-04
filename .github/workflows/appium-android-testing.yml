@@ -93,7 +93,7 @@ jobs:
       - name: Install Python & Generate Appium Excel Test Report
         if: always()
         run: |
-          python3 -m pip install openpyxl --quiet
+          python3 -m pip install openpyxl --break-system-packages --quiet || python3 -m pip install openpyxl --quiet
           python3 scripts/generate_excel_reports.py
 
       # ── ACTION 5: actions/upload-artifact@v4 ───────────────────────────────

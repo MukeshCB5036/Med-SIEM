@@ -388,3 +388,13 @@ def seed_database(db: Session):
 
     db.commit()
     logger.info("Complete MedSIEM Phase 1 dataset seeded successfully.")
+
+
+if __name__ == "__main__":
+    from app.core.database import SessionLocal
+    db = SessionLocal()
+    try:
+        seed_database(db)
+        print("Database seeded successfully via seed.py.")
+    finally:
+        db.close()
