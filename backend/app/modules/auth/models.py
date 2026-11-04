@@ -54,7 +54,7 @@ class Role(Base):
     __tablename__ = "roles"
 
     id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    name = Column(String(100), nullable=False, unique=True, index=True) # e.g., 'Super Admin', 'SOC Manager'
+    name = Column(String(100), nullable=False, unique=True, index=True) # e.g., 'Admin', 'Security Analyst', 'Viewer'
     description = Column(String(255), nullable=True)
     is_system_role = Column(Boolean, default=False, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -96,6 +96,7 @@ class User(Base):
     organization = relationship("Organization", back_populates="users")
     roles = relationship("Role", secondary=user_roles, back_populates="users")
     audit_logs = relationship("AuditLog", back_populates="user", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
 
 
 class AuditLog(Base):
@@ -110,3 +111,21 @@ class AuditLog(Base):
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
     user = relationship("User", back_populates="audit_logs")
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True) # None = broadcast to all in org
+    title = Column(String(255), nullable=False)
+    message = Column(Text, nullable=False)
+    severity = Column(String(50), default="INFO", nullable=False) # INFO, WARNING, CRITICAL
+    category = Column(String(50), default="SYSTEM", nullable=False) # ALERT, INCIDENT, AGENT, COMPLIANCE
+    link = Column(String(255), nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    organization = relationship("Organization")
+    user = relationship("User", back_populates="notifications")

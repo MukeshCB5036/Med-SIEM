@@ -1,0 +1,48 @@
+export const THEME = {
+  colors: {
+    bg: '#020617',
+    surface: '#0f172a',
+    surfaceElevated: '#1e293b',
+    border: '#1e293b',
+    borderLight: '#334155',
+    primary: '#e11d48',
+    primaryLight: 'rgba(225, 29, 72, 0.15)',
+    primaryBorder: 'rgba(225, 29, 72, 0.4)',
+    text: '#f8fafc',
+    textSecondary: '#94a3b8',
+    textMuted: '#64748b',
+    critical: '#f43f5e',
+    criticalBg: 'rgba(244, 63, 94, 0.15)',
+    high: '#f59e0b',
+    highBg: 'rgba(245, 158, 11, 0.15)',
+    medium: '#3b82f6',
+    mediumBg: 'rgba(59, 130, 246, 0.15)',
+    low: '#10b981',
+    lowBg: 'rgba(16, 185, 129, 0.15)',
+    info: '#06b6d4',
+    infoBg: 'rgba(6, 182, 212, 0.15)',
+    online: '#10b981',
+    offline: '#f43f5e',
+  },
+  typography: {
+    title: { fontSize: 20, fontWeight: 'bold' as const, color: '#f8fafc' },
+    sectionHeader: { fontSize: 12, fontWeight: 'bold' as const, color: '#94a3b8', textTransform: 'uppercase' as const, letterSpacing: 0.5 },
+    cardTitle: { fontSize: 14, fontWeight: 'bold' as const, color: '#f8fafc' },
+    body: { fontSize: 13, color: '#cbd5e1', lineHeight: 18 },
+    caption: { fontSize: 11, color: '#94a3b8' },
+    code: { fontSize: 11, fontFamily: 'monospace', color: '#34d399' }
+  },
+  spacing: {
+    xs: 4,
+    sm: 8,
+    md: 12,
+    lg: 16,
+    xl: 24,
+  },
+  radius: {
+    sm: 4,
+    md: 8,
+    lg: 12,
+    full: 9999,
+  }
+};

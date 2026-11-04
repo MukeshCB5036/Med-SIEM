@@ -1,6 +1,6 @@
 from uuid import UUID
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from pydantic import BaseModel, Field
 from app.modules.assets.models import AssetCriticality, AssetStatus, AgentStatus
 
@@ -39,6 +39,10 @@ class AssetBase(BaseModel):
     department: Optional[str] = None
     owner: Optional[str] = None
     criticality: AssetCriticality = AssetCriticality.MEDIUM
+    # Clinical Service Context
+    clinical_service: Optional[str] = None
+    operational_dependency: Optional[str] = None
+    potential_operational_impact: Optional[str] = None
 
 
 class AssetCreate(AssetBase):
@@ -54,6 +58,9 @@ class AssetUpdate(BaseModel):
     owner: Optional[str] = None
     criticality: Optional[AssetCriticality] = None
     status: Optional[AssetStatus] = None
+    clinical_service: Optional[str] = None
+    operational_dependency: Optional[str] = None
+    potential_operational_impact: Optional[str] = None
     group_ids: Optional[List[UUID]] = None
 
 
@@ -65,6 +72,8 @@ class AgentResponse(BaseModel):
     os_version: str
     status: AgentStatus
     last_heartbeat: datetime
+    collector_health: Optional[Dict[str, Any]] = None
+    telemetry_freshness_seconds: Optional[int] = 0
     created_at: datetime
 
     class Config:
@@ -98,6 +107,7 @@ class AgentRegisterRequest(BaseModel):
     os_name: str
     os_version: str
     org_id: UUID
+    enrollment_token: Optional[str] = None
 
 
 class AgentRegisterResponse(BaseModel):
@@ -111,9 +121,33 @@ class AgentHeartbeatRequest(BaseModel):
     agent_id: UUID
     api_key: str
     agent_version: Optional[str] = None
+    collector_health: Optional[Dict[str, Any]] = None
 
 
 class AgentHeartbeatResponse(BaseModel):
     success: bool = True
     status: AgentStatus
     timestamp: datetime
+
+
+# Enrollment Token Schemas
+class EnrollmentTokenCreate(BaseModel):
+    name: str
+    org_id: UUID
+    max_uses: int = 10
+    expires_in_days: int = 30
+
+
+class EnrollmentTokenResponse(BaseModel):
+    id: UUID
+    org_id: UUID
+    name: str
+    token: Optional[str] = None # Plain token only returned upon creation
+    max_uses: int
+    used_count: int
+    expires_at: datetime
+    is_revoked: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True

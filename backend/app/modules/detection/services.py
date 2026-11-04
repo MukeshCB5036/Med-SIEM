@@ -1,8 +1,10 @@
 import json
+import hashlib
 from uuid import UUID
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
+from sqlalchemy.orm.attributes import flag_modified
 from app.modules.detection.repositories import DetectionRepository
 from app.modules.detection.models import DetectionRule, Alert, Incident, IncidentComment, AlertStatus, IncidentStatus, AlertSeverity
 from app.modules.detection.schemas import (
@@ -19,10 +21,10 @@ class DetectionEngineService:
         self.repo = DetectionRepository(db)
 
     # --------------------------------------------------------------------------
-    # Detection Engine Evaluator Logic
+    # Detection Engine Evaluator Logic with Correlation and Deduplication
     # --------------------------------------------------------------------------
     def evaluate_event(self, event: NormalizedEvent) -> List[Alert]:
-        """Evaluates an incoming normalized event against enabled detection rules."""
+        """Evaluates an incoming normalized event against enabled detection rules with correlation."""
         generated_alerts = []
         rules = self.repo.get_enabled_rules()
 
@@ -47,22 +49,80 @@ class DetectionEngineService:
                     is_match = True
 
                 if is_match:
-                    alert = Alert(
-                        rule_id=rule.id,
-                        asset_id=event.asset_id,
-                        event_id=event.id,
-                        org_id=event.org_id,
-                        title=f"Detection Triggered: {rule.name}",
-                        description=f"Rule '{rule.name}' matched event on host {event.hostname}. {rule.description or ''}",
-                        severity=rule.severity,
-                        status=AlertStatus.OPEN,
-                        mitre_technique=rule.mitre_technique,
-                        source_ip=event.source_ip,
-                        destination_ip=event.destination_ip,
-                        username=event.username
-                    )
-                    saved_alert = self.repo.create_alert(alert)
-                    generated_alerts.append(saved_alert)
+                    # 1. Construct a deterministic, stable correlation key
+                    # Incorporates Rule ID, Organization ID, Affected Asset/Host, Source IP, Destination IP
+                    asset_key = str(event.asset_id) if event.asset_id else (event.hostname or "unknown_asset")
+                    src_key = event.source_ip or "internal"
+                    dst_key = event.destination_ip or "internal"
+                    raw_corr_str = f"{rule.id}:{event.org_id}:{asset_key}:{src_key}:{dst_key}"
+                    correlation_key = hashlib.sha256(raw_corr_str.encode("utf-8")).hexdigest()[:64]
+
+                    # 2. Configurable correlation window (defaults to rule time_window_seconds or 300s)
+                    window_seconds = getattr(rule, "time_window_seconds", 300) or 300
+                    if window_seconds < 60:
+                        window_seconds = 300
+                    now = datetime.now(timezone.utc)
+                    window_start = now - timedelta(seconds=window_seconds)
+
+                    # 3. Check for an existing open alert for this correlation key within the window
+                    existing_alert = self.repo.find_open_correlated_alert(correlation_key, window_start)
+
+                    if existing_alert:
+                        # Correlate and deduplicate: update existing open alert
+                        existing_alert.occurrence_count = (existing_alert.occurrence_count or 1) + 1
+                        existing_alert.last_seen = now
+                        existing_alert.updated_at = now
+                        existing_alert.event_id = event.id
+
+                        # Append to supporting events history (capped at latest 50 events)
+                        history = existing_alert.supporting_events or []
+                        if not isinstance(history, list):
+                            history = []
+                        history.append({
+                            "event_id": str(event.id),
+                            "timestamp": event.timestamp.isoformat() if event.timestamp else now.isoformat(),
+                            "source": event.source,
+                            "message": event.message
+                        })
+                        if len(history) > 50:
+                            history = history[-50:]
+                        existing_alert.supporting_events = list(history)
+                        flag_modified(existing_alert, "supporting_events")
+
+                        saved_alert = self.repo.update_alert(existing_alert)
+                        generated_alerts.append(saved_alert)
+                    else:
+                        # Create a brand new Alert
+                        initial_history = [{
+                            "event_id": str(event.id),
+                            "timestamp": event.timestamp.isoformat() if event.timestamp else now.isoformat(),
+                            "source": event.source,
+                            "message": event.message
+                        }]
+                        alert = Alert(
+                            rule_id=rule.id,
+                            asset_id=event.asset_id,
+                            event_id=event.id,
+                            org_id=event.org_id,
+                            title=f"Detection Triggered: {rule.name}",
+                            description=f"Rule '{rule.name}' matched event on host {event.hostname}. {rule.description or ''}",
+                            severity=rule.severity,
+                            status=AlertStatus.OPEN,
+                            mitre_technique=rule.mitre_technique,
+                            source_ip=event.source_ip,
+                            destination_ip=event.destination_ip,
+                            username=event.username,
+                            matched_conditions=conds,
+                            supporting_events=initial_history,
+                            detection_timestamp=now,
+                            severity_rationale=f"Rule '{rule.name}' matched incoming telemetry on {event.hostname}.",
+                            correlation_key=correlation_key,
+                            occurrence_count=1,
+                            first_seen=now,
+                            last_seen=now
+                        )
+                        saved_alert = self.repo.create_alert(alert)
+                        generated_alerts.append(saved_alert)
             except Exception as e:
                 continue
 
@@ -117,8 +177,19 @@ class DetectionEngineService:
     # --------------------------------------------------------------------------
     # Alerts Management
     # --------------------------------------------------------------------------
-    def get_alerts(self, skip: int = 0, limit: int = 50, severity: Optional[str] = None, status_val: Optional[str] = None) -> List[Alert]:
-        return self.repo.get_alerts(skip, limit, severity, status_val)
+    def get_alerts(
+        self, 
+        skip: int = 0, 
+        limit: int = 50, 
+        severity: Optional[str] = None, 
+        status_val: Optional[str] = None,
+        active_only: bool = False,
+        deduplicate: bool = False
+    ) -> List[Alert]:
+        return self.repo.get_alerts(skip, limit, severity, status_val, active_only, deduplicate)
+
+    def get_alert_stats(self) -> Dict[str, Any]:
+        return self.repo.get_alert_stats()
 
     def get_alert_by_id(self, alert_id: UUID) -> Alert:
         alert = self.repo.get_alert_by_id(alert_id)

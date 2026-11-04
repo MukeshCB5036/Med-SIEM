@@ -1,5 +1,6 @@
 from uuid import UUID
-from typing import List
+from datetime import datetime
+from typing import List, Optional
 from fastapi import APIRouter, Depends, Request, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
@@ -8,7 +9,8 @@ from app.modules.auth.schemas import (
     LoginRequest, LoginResponse, Token, RefreshTokenRequest, ChangePasswordRequest,
     VerifyEmailRequest, ResendVerificationRequest, VerifyOtpRequest,
     UserCreate, UserUpdate, UserResponse,
-    RoleCreate, RoleUpdate, RoleResponse, ApiResponse
+    RoleCreate, RoleUpdate, RoleResponse, ApiResponse,
+    AuditLogListResponse, NotificationResponse, NotificationCreate
 )
 from app.modules.auth.services import AuthService
 from app.modules.auth.dependencies import get_current_user, PermissionChecker, require_superuser
@@ -204,3 +206,90 @@ def delete_role(id: UUID, db: Session = Depends(get_db)):
     service = AuthService(db)
     service.delete_role(id)
     return ApiResponse(success=True, data={"message": f"Role {id} deleted successfully"})
+
+
+# ==============================================================================
+# AUDIT LOG ENDPOINTS
+# ==============================================================================
+
+@router.get(
+    "/audit-logs", 
+    response_model=ApiResponse[AuditLogListResponse],
+    dependencies=[Depends(PermissionChecker("users.read"))]
+)
+def list_audit_logs(
+    page: int = 1,
+    page_size: int = 50,
+    action: Optional[str] = None,
+    user_id: Optional[UUID] = None,
+    start_date: Optional[datetime] = None,
+    end_date: Optional[datetime] = None,
+    search: Optional[str] = None,
+    db: Session = Depends(get_db)
+):
+    """Query audit logs with filtering and pagination."""
+    service = AuthService(db)
+    res = service.get_audit_logs(
+        page=page,
+        page_size=page_size,
+        action=action,
+        user_id=user_id,
+        start_date=start_date,
+        end_date=end_date,
+        search=search
+    )
+    return ApiResponse(success=True, data=res)
+
+
+# ==============================================================================
+# NOTIFICATIONS ENDPOINTS
+# ==============================================================================
+
+@router.get(
+    "/notifications", 
+    response_model=ApiResponse[List[NotificationResponse]],
+    status_code=status.HTTP_200_OK
+)
+def list_notifications(
+    unread_only: bool = False,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List system notifications for current authenticated user."""
+    service = AuthService(db)
+    notifs = service.get_notifications(user_id=current_user.id, org_id=current_user.org_id, unread_only=unread_only)
+    return ApiResponse(success=True, data=[NotificationResponse.model_validate(n) for n in notifs])
+
+
+@router.patch(
+    "/notifications/{id}/read", 
+    response_model=ApiResponse[NotificationResponse],
+    status_code=status.HTTP_200_OK
+)
+def mark_notification_read(
+    id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Mark notification as read."""
+    service = AuthService(db)
+    notif = service.mark_notification_read(id)
+    return ApiResponse(success=True, data=NotificationResponse.model_validate(notif))
+
+
+@router.post(
+    "/notifications", 
+    response_model=ApiResponse[NotificationResponse],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(PermissionChecker("alerts.update"))]
+)
+def create_notification(
+    notif_data: NotificationCreate,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Create a security broadcast or user notification."""
+    service = AuthService(db)
+    notif = service.create_notification(org_id=current_user.org_id, notif_data=notif_data)
+    return ApiResponse(success=True, data=NotificationResponse.model_validate(notif))
+

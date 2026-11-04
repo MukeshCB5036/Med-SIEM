@@ -1,7 +1,8 @@
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
+from sqlalchemy import or_
 from app.modules.auth.models import User, Organization, Role, Permission, AuditLog
 
 
@@ -95,3 +96,40 @@ class AuthRepository:
         )
         self.db.add(log)
         self.db.commit()
+
+    def get_audit_logs(
+        self,
+        page: int = 1,
+        page_size: int = 50,
+        action: Optional[str] = None,
+        user_id: Optional[UUID] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        search: Optional[str] = None
+    ) -> Tuple[List[AuditLog], int]:
+        query = self.db.query(AuditLog).outerjoin(User, AuditLog.user_id == User.id)
+
+        if action:
+            query = query.filter(AuditLog.action == action)
+        if user_id:
+            query = query.filter(AuditLog.user_id == user_id)
+        if start_date:
+            query = query.filter(AuditLog.created_at >= start_date)
+        if end_date:
+            query = query.filter(AuditLog.created_at <= end_date)
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    AuditLog.action.ilike(search_pattern),
+                    AuditLog.details.ilike(search_pattern),
+                    AuditLog.ip_address.ilike(search_pattern),
+                    User.email.ilike(search_pattern),
+                    User.full_name.ilike(search_pattern)
+                )
+            )
+
+        total = query.count()
+        skip = (page - 1) * page_size
+        logs = query.order_by(AuditLog.created_at.desc()).offset(skip).limit(page_size).all()
+        return logs, total

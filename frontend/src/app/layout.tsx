@@ -1,6 +1,6 @@
 import React from 'react'
 import { AuthProvider } from '@/context/AuthContext'
-import SOCNavHeader from '@/components/SOCNavHeader'
+import SOCLayout from '@/components/SOCLayout'
 import './globals.css'
 import type { Metadata } from 'next'
 
@@ -12,12 +12,14 @@ export const metadata: Metadata = {
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en" className="dark">
-      <body className="min-h-screen bg-slate-950 text-slate-100 antialiased">
+      <body className="min-h-screen bg-[#070b14] text-slate-100 antialiased font-sans selection:bg-cyan-500/20 selection:text-cyan-300">
         <AuthProvider>
-          <SOCNavHeader />
-          {children}
+          <SOCLayout>
+            {children}
+          </SOCLayout>
         </AuthProvider>
       </body>
     </html>
   )
 }
+

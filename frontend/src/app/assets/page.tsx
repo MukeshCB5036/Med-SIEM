@@ -1,24 +1,22 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
+import MetricCard from '@/components/MetricCard';
+import DataTable, { Column } from '@/components/DataTable';
+import SearchFilterBar from '@/components/SearchFilterBar';
+import DetailPanel from '@/components/DetailPanel';
+import SeverityBadge from '@/components/SeverityBadge';
 import { apiClient } from '@/lib/api';
-
-interface Agent {
-  id: string;
-  asset_id: string;
-  agent_version: string;
-  os_name: string;
-  os_version: string;
-  status: 'Online' | 'Offline' | 'Unregistered' | 'Revoked';
-  last_heartbeat: string;
-  revoked_at: string | null;
-  created_at: string;
-  asset?: {
-    hostname: string;
-    ip_address: string;
-    criticality: string;
-  };
-}
+import {
+  Database,
+  Server,
+  Activity,
+  Stethoscope,
+  ShieldAlert,
+  AlertTriangle,
+  Hospital,
+  HardDrive
+} from 'lucide-react';
 
 interface Asset {
   id: string;
@@ -26,231 +24,271 @@ interface Asset {
   asset_name: string;
   asset_type: string;
   ip_address: string;
+  department?: string;
+  clinical_service?: string;
+  operational_dependency?: string;
+  potential_operational_impact?: string;
   criticality: 'Low' | 'Medium' | 'High' | 'Critical';
   status: 'Online' | 'Offline' | 'Maintenance' | 'Revoked';
   last_seen: string | null;
   agent_version: string | null;
-  agent?: Agent;
 }
 
 export default function AssetsPage() {
   const [assets, setAssets] = useState<Asset[]>([]);
-  const [agents, setAgents] = useState<Agent[]>([]);
   const [search, setSearch] = useState('');
+  const [criticalityFilter, setCriticalityFilter] = useState('ALL');
   const [loading, setLoading] = useState(true);
-  const [actionLoading, setActionLoading] = useState(false);
-  const [tab, setTab] = useState<'assets' | 'agents'>('assets');
+  const [selectedAsset, setSelectedAsset] = useState<Asset | null>(null);
 
-  const fetchAssetsAndAgents = async () => {
+  const fetchAssets = async () => {
     setLoading(true);
     const query = search ? `?search=${encodeURIComponent(search)}` : '';
-    const [assetRes, agentRes] = await Promise.all([
-      apiClient<Asset[]>(`/assets${query}`),
-      apiClient<Agent[]>('/agents')
-    ]);
-
-    if (assetRes.success && assetRes.data) {
-      setAssets(assetRes.data);
+    try {
+      const res = await apiClient<Asset[]>(`/assets${query}`);
+      if (res.success && res.data) {
+        setAssets(res.data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
-    if (agentRes.success && agentRes.data) {
-      setAgents(agentRes.data);
-    }
-    setLoading(false);
   };
 
   useEffect(() => {
-    fetchAssetsAndAgents();
+    fetchAssets();
   }, [search]);
 
-  const handleRevokeAgent = async (agentId: string) => {
-    if (!confirm('Are you sure you want to revoke this agent? It will immediately stop log ingestion and heartbeat.')) return;
-    setActionLoading(true);
-    const res = await apiClient(`/agents/${agentId}/revoke`, { method: 'POST' });
-    setActionLoading(false);
-    if (res.success) {
-      alert('Agent credentials revoked successfully.');
-      fetchAssetsAndAgents();
-    } else {
-      alert(res.error || 'Failed to revoke agent.');
-    }
-  };
+  const filteredAssets = assets.filter(a => {
+    const matchesCriticality =
+      criticalityFilter === 'ALL' || a.criticality.toUpperCase() === criticalityFilter;
+    return matchesCriticality;
+  });
 
+  const criticalCount = assets.filter(a => a.criticality === 'Critical').length;
   const onlineCount = assets.filter(a => a.status === 'Online').length;
-  const offlineCount = assets.filter(a => a.status === 'Offline').length;
+  const offlineCount = assets.filter(a => a.status !== 'Online').length;
+
+  const columns: Column<Asset>[] = [
+    {
+      key: 'criticality',
+      header: 'Criticality',
+      sortable: true,
+      render: item => <SeverityBadge severity={item.criticality.toUpperCase()} size="sm" />
+    },
+    {
+      key: 'hostname',
+      header: 'Asset Identity',
+      sortable: true,
+      render: item => (
+        <div className="flex flex-col">
+          <span className="font-bold text-cyan-400 font-mono text-xs">{item.hostname}</span>
+          <span className="text-[10px] text-slate-300 font-medium">{item.asset_name}</span>
+        </div>
+      )
+    },
+    {
+      key: 'service',
+      header: 'Clinical Service Context',
+      render: item => (
+        <div className="flex flex-col text-xs">
+          <span className="font-bold text-slate-200">{item.clinical_service || 'General IT Infrastructure'}</span>
+          <span className="text-[10px] text-slate-400 font-medium">{item.department || 'Central IT'}</span>
+        </div>
+      )
+    },
+    {
+      key: 'type',
+      header: 'Device Type / IP',
+      render: item => (
+        <div className="flex flex-col font-mono text-[11px] text-slate-300">
+          <span>{item.asset_type}</span>
+          <span className="text-slate-400">{item.ip_address}</span>
+        </div>
+      )
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      sortable: true,
+      render: item => (
+        <span
+          className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded text-[11px] font-mono font-bold border ${
+            item.status === 'Online'
+              ? 'bg-emerald-950/40 text-emerald-400 border-emerald-500/30'
+              : 'bg-rose-950/40 text-rose-400 border-rose-500/30'
+          }`}
+        >
+          <span
+            className={`w-1.5 h-1.5 rounded-full ${
+              item.status === 'Online' ? 'bg-emerald-400 animate-pulse' : 'bg-rose-400'
+            }`}
+          />
+          {item.status.toUpperCase()}
+        </span>
+      )
+    },
+    {
+      key: 'action',
+      header: 'Clinical Impact',
+      render: item => (
+        <button
+          onClick={e => {
+            e.stopPropagation();
+            setSelectedAsset(item);
+          }}
+          className="px-2.5 py-1 rounded bg-cyan-950/40 hover:bg-cyan-900/60 text-cyan-400 border border-cyan-800 text-xs font-semibold transition-colors"
+        >
+          Inspect Impact
+        </button>
+      )
+    }
+  ];
 
   return (
-    <div className="p-6 space-y-6 bg-slate-950 text-slate-100 min-h-screen">
-      {/* Header & Stats */}
-      <div className="flex items-center justify-between">
+    <div className="space-y-6">
+      {/* Page Header */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <h1 className="text-2xl font-bold text-slate-100">Healthcare Asset & Endpoint Agent Management</h1>
-          <p className="text-xs text-slate-400">Centralized monitoring, telemetry, and security revocation for MedSIEM Agents</p>
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={() => setTab('assets')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${tab === 'assets' ? 'bg-rose-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
-          >
-            Asset Inventory ({assets.length})
-          </button>
-          <button
-            onClick={() => setTab('agents')}
-            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors ${tab === 'agents' ? 'bg-rose-600 text-white' : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'}`}
-          >
-            Endpoint Agents ({agents.length})
-          </button>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight flex items-center gap-2">
+            <Database className="w-5 h-5 text-cyan-400" />
+            Healthcare Asset Intelligence & Criticality
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Clinical device catalog, departmental service mapping, and patient care operational dependencies.
+          </p>
         </div>
       </div>
 
-      <div className="grid grid-cols-4 gap-4">
-        <div className="p-4 rounded-lg bg-slate-900 border border-slate-800">
-          <span className="text-xs font-medium text-slate-400 uppercase">Monitored Assets</span>
-          <div className="mt-2 text-3xl font-bold text-slate-100">{assets.length}</div>
-        </div>
-        <div className="p-4 rounded-lg bg-slate-900 border border-slate-800">
-          <span className="text-xs font-medium text-slate-400 uppercase">Agents Online</span>
-          <div className="mt-2 text-3xl font-bold text-emerald-400">{onlineCount}</div>
-        </div>
-        <div className="p-4 rounded-lg bg-slate-900 border border-slate-800">
-          <span className="text-xs font-medium text-slate-400 uppercase">Agents Offline</span>
-          <div className="mt-2 text-3xl font-bold text-rose-400">{offlineCount}</div>
-        </div>
-        <div className="p-4 rounded-lg bg-slate-900 border border-slate-800">
-          <span className="text-xs font-medium text-slate-400 uppercase">Revoked Credentials</span>
-          <div className="mt-2 text-3xl font-bold text-amber-400">
-            {agents.filter(a => a.status === 'Revoked').length}
-          </div>
-        </div>
-      </div>
-
-      {/* Filter & Search Bar */}
-      <div className="flex items-center justify-between bg-slate-900 p-4 rounded-lg border border-slate-800">
-        <input
-          type="text"
-          placeholder="Search by hostname, IP address, OS, or version..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="w-96 px-3 py-2 bg-slate-950 border border-slate-800 rounded-md text-xs text-slate-100 placeholder-slate-500 focus:outline-none focus:border-rose-500"
+      {/* Metric Cards Row */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          title="Monitored Assets"
+          value={assets.length}
+          subtext="Hospital IT & medical devices"
+          variant="cyan"
+          icon={HardDrive}
         />
-        <div className="text-xs text-slate-400">
-          Showing {tab === 'assets' ? assets.length : agents.length} items
-        </div>
+        <MetricCard
+          title="Critical Tier Assets"
+          value={criticalCount}
+          subtext="Direct life-safety & EHR"
+          variant="rose"
+          icon={ShieldAlert}
+        />
+        <MetricCard
+          title="Online Telemetry"
+          value={onlineCount}
+          subtext="Active heartbeat verified"
+          variant="emerald"
+          icon={Activity}
+        />
+        <MetricCard
+          title="Offline Devices"
+          value={offlineCount}
+          subtext="Requiring network inspection"
+          variant={offlineCount > 0 ? 'amber' : 'blue'}
+          icon={AlertTriangle}
+        />
       </div>
 
-      {/* ASSETS TABLE */}
-      {tab === 'assets' && (
-        <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-400">
-            <thead className="bg-slate-950 uppercase text-slate-500 border-b border-slate-800">
-              <tr>
-                <th className="p-3">Status</th>
-                <th className="p-3">Hostname</th>
-                <th className="p-3">Asset Name</th>
-                <th className="p-3">Type</th>
-                <th className="p-3">IP Address</th>
-                <th className="p-3">Criticality</th>
-                <th className="p-3">Agent Version</th>
-                <th className="p-3">Last Heartbeat</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {loading ? (
-                <tr><td colSpan={8} className="p-4 text-center">Loading inventory...</td></tr>
-              ) : assets.length === 0 ? (
-                <tr><td colSpan={8} className="p-4 text-center">No endpoints found matching search.</td></tr>
-              ) : (
-                assets.map((asset) => (
-                  <tr key={asset.id} className="hover:bg-slate-800/50">
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        asset.status === 'Online' ? 'bg-emerald-500/20 text-emerald-400' :
-                        asset.status === 'Revoked' ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
-                      }`}>
-                        {asset.status}
-                      </span>
-                    </td>
-                    <td className="p-3 text-slate-200 font-medium">{asset.hostname}</td>
-                    <td className="p-3">{asset.asset_name}</td>
-                    <td className="p-3 text-slate-300">{asset.asset_type}</td>
-                    <td className="p-3 font-mono">{asset.ip_address}</td>
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        asset.criticality === 'Critical' ? 'bg-rose-500/20 text-rose-400' :
-                        asset.criticality === 'High' ? 'bg-amber-500/20 text-amber-400' : 'bg-slate-700 text-slate-300'
-                      }`}>
-                        {asset.criticality}
-                      </span>
-                    </td>
-                    <td className="p-3 font-mono text-[11px]">{asset.agent_version || 'N/A'}</td>
-                    <td className="p-3 text-slate-400">
-                      {asset.last_seen ? new Date(asset.last_seen).toLocaleTimeString() : 'Never'}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Search and Filters */}
+      <SearchFilterBar
+        searchQuery={search}
+        onSearchChange={setSearch}
+        placeholder="Filter by hostname, device name, IP address..."
+        filters={[
+          {
+            key: 'criticality',
+            label: 'Criticality',
+            value: criticalityFilter,
+            onChange: setCriticalityFilter,
+            options: [
+              { label: 'All Criticalities', value: 'ALL' },
+              { label: 'Critical Tier', value: 'CRITICAL' },
+              { label: 'High Tier', value: 'HIGH' },
+              { label: 'Medium Tier', value: 'MEDIUM' },
+              { label: 'Low Tier', value: 'LOW' }
+            ]
+          }
+        ]}
+        onRefresh={fetchAssets}
+        isRefreshing={loading}
+      />
 
-      {/* ENDPOINT AGENTS TABLE */}
-      {tab === 'agents' && (
-        <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 overflow-x-auto">
-          <table className="w-full text-left text-xs text-slate-400">
-            <thead className="bg-slate-950 uppercase text-slate-500 border-b border-slate-800">
-              <tr>
-                <th className="p-3">Agent Status</th>
-                <th className="p-3">Agent ID</th>
-                <th className="p-3">OS Platform</th>
-                <th className="p-3">OS Version</th>
-                <th className="p-3">Agent Version</th>
-                <th className="p-3">Last Heartbeat</th>
-                <th className="p-3">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800">
-              {loading ? (
-                <tr><td colSpan={7} className="p-4 text-center">Loading agents...</td></tr>
-              ) : agents.length === 0 ? (
-                <tr><td colSpan={7} className="p-4 text-center">No endpoint agents registered.</td></tr>
-              ) : (
-                agents.map((agent) => (
-                  <tr key={agent.id} className="hover:bg-slate-800/50">
-                    <td className="p-3">
-                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                        agent.status === 'Online' ? 'bg-emerald-500/20 text-emerald-400' :
-                        agent.status === 'Revoked' ? 'bg-amber-500/20 text-amber-400' : 'bg-rose-500/20 text-rose-400'
-                      }`}>
-                        {agent.status}
-                      </span>
-                    </td>
-                    <td className="p-3 font-mono text-slate-200">{agent.id}</td>
-                    <td className="p-3 text-slate-300">{agent.os_name}</td>
-                    <td className="p-3">{agent.os_version}</td>
-                    <td className="p-3 font-mono">{agent.agent_version}</td>
-                    <td className="p-3 text-slate-400">
-                      {agent.last_heartbeat ? new Date(agent.last_heartbeat).toLocaleTimeString() : 'Never'}
-                    </td>
-                    <td className="p-3">
-                      {agent.status !== 'Revoked' ? (
-                        <button
-                          onClick={() => handleRevokeAgent(agent.id)}
-                          disabled={actionLoading}
-                          className="px-2.5 py-1 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 border border-amber-600/30 text-[10px] font-bold rounded transition-colors"
-                        >
-                          Revoke Credential
-                        </button>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 italic">Revoked</span>
-                      )}
-                    </td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
-      )}
+      {/* Asset Table */}
+      <DataTable
+        columns={columns}
+        data={filteredAssets}
+        keyExtractor={item => item.id}
+        onRowClick={item => setSelectedAsset(item)}
+        isLoading={loading}
+        emptyTitle="No healthcare assets located"
+        emptyDescription="Register hospital hosts or endpoint agents to establish asset telemetry."
+      />
+
+      {/* Clinical Service Context Detail Slide-Out Panel */}
+      <DetailPanel
+        isOpen={!!selectedAsset}
+        onClose={() => setSelectedAsset(null)}
+        title="Clinical Service Context & Operational Dependency"
+        subtitle={selectedAsset ? `HOST: ${selectedAsset.hostname}` : ''}
+        width="xl"
+      >
+        {selectedAsset && (
+          <div className="space-y-6 text-xs">
+            {/* Criticality Banner */}
+            <div className="p-4 rounded-xl border border-cyan-500/30 bg-cyan-950/20 flex items-center justify-between">
+              <div>
+                <span className="text-[10px] font-mono text-cyan-400 uppercase tracking-widest font-bold">
+                  Healthcare Criticality Tier
+                </span>
+                <div className="text-xl font-mono font-bold text-slate-100 mt-0.5">
+                  {selectedAsset.criticality.toUpperCase()} IMPACT
+                </div>
+              </div>
+              <SeverityBadge severity={selectedAsset.criticality.toUpperCase()} size="md" />
+            </div>
+
+            {/* Department and Service */}
+            <div className="grid grid-cols-2 gap-3">
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-mono">Hospital Department</span>
+                <p className="font-bold text-slate-100 text-xs mt-0.5">
+                  {selectedAsset.department || 'Hospital Core IT'}
+                </p>
+              </div>
+              <div className="p-3 rounded-lg bg-slate-900 border border-slate-800">
+                <span className="text-[10px] text-slate-400 font-mono">Associated Clinical Service</span>
+                <p className="font-bold text-cyan-400 text-xs mt-0.5">
+                  {selectedAsset.clinical_service || 'Standard Hospital Server'}
+                </p>
+              </div>
+            </div>
+
+            {/* Operational Dependency */}
+            <div className="p-4 rounded-xl bg-slate-900/80 border border-slate-800 space-y-1">
+              <span className="text-[10px] font-mono text-slate-400 uppercase font-bold tracking-wider">
+                Operational Dependency
+              </span>
+              <p className="text-slate-200 text-xs font-medium leading-relaxed">
+                {selectedAsset.operational_dependency || 'Standard administrative and medical documentation support.'}
+              </p>
+            </div>
+
+            {/* Potential Operational Impact */}
+            <div className="p-4 rounded-xl bg-rose-950/20 border border-rose-900/40 text-rose-200 space-y-1">
+              <span className="text-[10px] font-mono text-rose-400 uppercase font-bold tracking-wider">
+                Potential Clinical Impact Upon Compromise
+              </span>
+              <p className="text-xs font-medium leading-relaxed">
+                {selectedAsset.potential_operational_impact || 'Degraded operational capability and delayed clinical reporting.'}
+              </p>
+            </div>
+          </div>
+        )}
+      </DetailPanel>
     </div>
   );
 }

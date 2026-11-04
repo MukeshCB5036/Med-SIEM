@@ -3,7 +3,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8000/a
 export async function apiClient<T>(
   endpoint: string,
   options: RequestInit = {}
-): Promise<{ success: boolean; data: T | null; error: string | null }> {
+): Promise<{ success: boolean; data: T | null; error: string | null; meta?: any }> {
   const token = typeof window !== 'undefined' ? localStorage.getItem('medsiem_access_token') : null;
 
   const headers: Record<string, string> = {

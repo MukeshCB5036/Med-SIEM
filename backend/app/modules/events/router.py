@@ -36,20 +36,29 @@ def list_events(
     limit: int = 50, 
     hostname: Optional[str] = None, 
     severity: Optional[str] = None, 
+    source: Optional[str] = None,
+    category: Optional[str] = None,
+    search: Optional[str] = None,
     db: Session = Depends(get_db)
 ):
-    """Query normalized event stream."""
+    """Query normalized event stream with rich filters and pagination metadata."""
     service = EventService(db)
-    events = service.get_events(skip, limit, hostname, severity)
+    events, total_count = service.get_events(skip, limit, hostname, severity, source, category, search)
     return {
         "success": True,
         "data": [NormalizedEventResponse.model_validate(e) for e in events],
-        "meta": {"skip": skip, "limit": limit, "count": len(events)}
+        "meta": {
+            "skip": skip, 
+            "limit": limit, 
+            "count": len(events),
+            "total_count": total_count,
+            "has_more": (skip + len(events) < total_count)
+        }
     }
 
 
 @router.get("/search", response_model=dict, dependencies=[Depends(PermissionChecker("alerts.read"))])
-def search_events_opensearch(q: str, limit: int = 50, db: Session = Depends(get_db)):
+def search_events_opensearch(q: str = "*", limit: int = 50, db: Session = Depends(get_db)):
     """Full-text search query across OpenSearch log index."""
     service = EventService(db)
     hits = service.search_events(q, limit)

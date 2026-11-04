@@ -56,30 +56,29 @@ def delete_rule(id: UUID, db: Session = Depends(get_db)):
 # ==============================================================================
 
 @router.get("/alerts", response_model=dict, dependencies=[Depends(PermissionChecker("alerts.read"))])
-def list_alerts(skip: int = 0, limit: int = 50, severity: Optional[str] = None, status_val: Optional[str] = None, db: Session = Depends(get_db)):
-    """List security alerts with filters."""
+def list_alerts(
+    skip: int = 0, 
+    limit: int = 50, 
+    severity: Optional[str] = None, 
+    status_val: Optional[str] = None,
+    active_only: bool = False,
+    deduplicate: bool = False,
+    db: Session = Depends(get_db)
+):
+    """List security alerts with filters and optional deduplication for threat feeds."""
     service = DetectionEngineService(db)
-    alerts = service.get_alerts(skip, limit, severity, status_val)
+    alerts = service.get_alerts(skip, limit, severity, status_val, active_only, deduplicate)
     return {"success": True, "data": [AlertResponse.model_validate(a) for a in alerts], "meta": {"count": len(alerts)}}
 
 
 @router.get("/alerts/stats", response_model=dict, dependencies=[Depends(PermissionChecker("alerts.read"))])
 def get_alert_stats(db: Session = Depends(get_db)):
-    """Get security alert statistics."""
+    """Get accurate, unified security alert, active incident, and asset statistics."""
     service = DetectionEngineService(db)
-    alerts = service.get_alerts(skip=0, limit=1000)
-    sev_counts = {}
-    status_counts = {}
-    for a in alerts:
-        sev_counts[a.severity.value] = sev_counts.get(a.severity.value, 0) + 1
-        status_counts[a.status.value] = status_counts.get(a.status.value, 0) + 1
+    stats_data = service.get_alert_stats()
     return {
         "success": True,
-        "data": {
-            "total_alerts": len(alerts),
-            "severity_breakdown": sev_counts,
-            "status_breakdown": status_counts
-        }
+        "data": stats_data
     }
 
 

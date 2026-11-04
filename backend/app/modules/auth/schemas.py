@@ -152,3 +152,58 @@ class UserResponse(UserBase):
 
     class Config:
         from_attributes = True
+
+
+# Audit Log Schemas
+class AuditLogResponse(BaseModel):
+    id: UUID
+    user_id: Optional[UUID] = None
+    user_email: Optional[str] = None
+    user_full_name: Optional[str] = None
+    action: str
+    ip_address: Optional[str] = None
+    user_agent: Optional[str] = None
+    details: Optional[str] = None
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class AuditLogPaginationMeta(BaseModel):
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
+
+
+class AuditLogListResponse(BaseModel):
+    items: List[AuditLogResponse]
+    pagination: AuditLogPaginationMeta
+
+
+# Notification Schemas
+class NotificationResponse(BaseModel):
+    id: UUID
+    org_id: UUID
+    user_id: Optional[UUID] = None
+    title: str
+    message: str
+    severity: str
+    category: str
+    link: Optional[str] = None
+    is_read: bool
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class NotificationCreate(BaseModel):
+    title: str
+    message: str
+    severity: str = "INFO"
+    category: str = "SYSTEM"
+    link: Optional[str] = None
+    user_id: Optional[UUID] = None
+

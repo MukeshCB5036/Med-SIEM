@@ -1,7 +1,7 @@
 from uuid import UUID
 from datetime import datetime
-from typing import Optional, List
-from pydantic import BaseModel
+from typing import Optional, List, Dict, Any
+from pydantic import BaseModel, Field
 from app.modules.detection.models import AlertSeverity, AlertStatus, IncidentStatus
 
 
@@ -28,8 +28,10 @@ class DetectionRuleUpdate(BaseModel):
     description: Optional[str] = None
     severity: Optional[AlertSeverity] = None
     rule_type: Optional[str] = None
-    event_category: Optional[str] = None
     conditions: Optional[str] = None
+    time_window_seconds: Optional[int] = None
+    threshold_count: Optional[int] = None
+    mitre_technique: Optional[str] = None
     enabled: Optional[bool] = None
 
 
@@ -53,6 +55,16 @@ class AlertBase(BaseModel):
     source_ip: Optional[str] = None
     destination_ip: Optional[str] = None
     username: Optional[str] = None
+    # Explainable Detection Foundation Fields
+    matched_conditions: Optional[Dict[str, Any]] = None
+    supporting_events: Optional[List[Dict[str, Any]]] = None
+    detection_timestamp: Optional[datetime] = None
+    severity_rationale: Optional[str] = None
+    # Correlation and Deduplication Fields
+    correlation_key: Optional[str] = None
+    occurrence_count: int = 1
+    first_seen: Optional[datetime] = None
+    last_seen: Optional[datetime] = None
 
 
 class AlertCreate(AlertBase):
@@ -69,6 +81,7 @@ class AlertUpdate(BaseModel):
     assigned_to_id: Optional[UUID] = None
     resolution_notes: Optional[str] = None
     is_false_positive: Optional[bool] = None
+    severity_rationale: Optional[str] = None
 
 
 class AlertResponse(AlertBase):
@@ -123,6 +136,11 @@ class IncidentCommentResponse(BaseModel):
         from_attributes = True
 
 
+# Synonyms for IncidentNote
+IncidentNoteCreate = IncidentCommentCreate
+IncidentNoteResponse = IncidentCommentResponse
+
+
 class IncidentResponse(IncidentBase):
     id: UUID
     assigned_to_id: Optional[UUID] = None
@@ -135,3 +153,13 @@ class IncidentResponse(IncidentBase):
 
     class Config:
         from_attributes = True
+
+
+class AlertStatsResponse(BaseModel):
+    total_active_alerts: int
+    critical_alerts: int
+    active_incidents: int
+    monitored_assets: int
+    total_alerts: int
+    severity_breakdown: Dict[str, int]
+    status_breakdown: Dict[str, int]

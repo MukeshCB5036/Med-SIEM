@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Table, Text, Enum as SQLEnum
+from typing import Optional, List, Dict, Any
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Table, Text, Integer, JSON, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -90,12 +90,17 @@ class Asset(Base):
     ip_address = Column(String(45), nullable=False, index=True)
     mac_address = Column(String(17), nullable=True)
     domain = Column(String(255), nullable=True)
-    department = Column(String(100), nullable=True)
+    department = Column(String(100), nullable=True) # Hospital department (ICU, Radiology, etc.)
     owner = Column(String(100), nullable=True)
     criticality = Column(SQLEnum(AssetCriticality), default=AssetCriticality.MEDIUM, nullable=False)
     status = Column(SQLEnum(AssetStatus), default=AssetStatus.OFFLINE, nullable=False)
     last_seen = Column(DateTime(timezone=True), nullable=True)
     agent_version = Column(String(50), nullable=True)
+    
+    # Clinical Service Context (Structured Healthcare SIEM Attributes)
+    clinical_service = Column(String(255), nullable=True) # e.g., EHR, PACS, Telemetry, LIS
+    operational_dependency = Column(String(255), nullable=True) # e.g., Direct Patient Life-Safety, Clinical Documentation
+    potential_operational_impact = Column(Text, nullable=True) # e.g., Disruption to emergency triage
     
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
@@ -118,6 +123,46 @@ class Agent(Base):
     status = Column(SQLEnum(AgentStatus), default=AgentStatus.OFFLINE, nullable=False)
     last_heartbeat = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     revoked_at = Column(DateTime(timezone=True), nullable=True)
+    
+    # Endpoint Trust & Collector Health
+    collector_health = Column(JSON, nullable=True) # e.g., {"cpu_percent": 1.2, "memory_mb": 42.5, "queue_depth": 0, "healthy": true}
+    telemetry_freshness_seconds = Column(Integer, default=0, nullable=True)
+    
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
 
     asset = relationship("Asset", back_populates="agent")
+    credentials = relationship("AgentCredential", back_populates="agent", cascade="all, delete-orphan")
+
+
+class AgentCredential(Base):
+    __tablename__ = "agent_credentials"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    agent_id = Column(UUID(as_uuid=True), ForeignKey("agents.id", ondelete="CASCADE"), nullable=False, index=True)
+    credential_type = Column(String(50), default="API_KEY", nullable=False) # API_KEY, CERTIFICATE, TOKEN
+    key_prefix = Column(String(20), nullable=True)
+    key_hash = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_used_at = Column(DateTime(timezone=True), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    agent = relationship("Agent", back_populates="credentials")
+
+
+class EnrollmentToken(Base):
+    __tablename__ = "enrollment_tokens"
+
+    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
+    org_id = Column(UUID(as_uuid=True), ForeignKey("organizations.id", ondelete="CASCADE"), nullable=False, index=True)
+    token_hash = Column(String(255), unique=True, nullable=False, index=True)
+    name = Column(String(100), nullable=False)
+    created_by_id = Column(UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    max_uses = Column(Integer, default=1, nullable=False)
+    used_count = Column(Integer, default=0, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_revoked = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    organization = relationship("Organization")
+    created_by = relationship("User")

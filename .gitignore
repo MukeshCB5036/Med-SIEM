@@ -2,6 +2,25 @@
 .env
 .env.*
 !.env.example
+.agent_secrets.json
+*/.agent_secrets.json
+*.agent_secrets.json
+secrets/
+credentials/
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Database dumps, test databases & volumes
+*.db
+*.sqlite
+*.sqlite3
+*.sql
+test_medsiem*.db
+volumes/
+data/
+docker/data/
 
 # macOS
 .DS_Store
@@ -24,6 +43,14 @@ out/
 npm-debug.log*
 yarn-debug.log*
 pnpm-debug.log*
+
+# Android build & caches
+.gradle/
+**/android/.gradle/
+**/app/build/
+**/build/
+*.apk
+*.aab
 
 # Test / coverage
 .coverage

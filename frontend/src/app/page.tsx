@@ -1,23 +1,56 @@
 'use client';
 
 import React, { useEffect, useState } from 'react';
-import { useAuth } from '@/context/AuthContext';
+import Link from 'next/link';
+import MetricCard from '@/components/MetricCard';
+import SeverityBadge from '@/components/SeverityBadge';
+import CyberChart from '@/components/CyberChart';
 import { apiClient } from '@/lib/api';
+import {
+  ShieldAlert,
+  BellRing,
+  Activity,
+  HardDrive,
+  Laptop,
+  Flame,
+  ArrowRight,
+  Stethoscope,
+  Radio,
+  CheckCircle2
+} from 'lucide-react';
 
 export default function SOCDashboardHome() {
-  const { user, logout, hasPermission } = useAuth();
   const [stats, setStats] = useState<any>(null);
   const [alerts, setAlerts] = useState<any[]>([]);
+  const [assetCount, setAssetCount] = useState<number>(4);
+  const [agentCount, setAgentCount] = useState<number>(1);
+  const [loading, setLoading] = useState(true);
 
   const fetchDashboardData = async () => {
-    const alertsRes = await apiClient<any[]>('/alerts?limit=5');
-    if (alertsRes.success && alertsRes.data) {
-      setAlerts(alertsRes.data);
-    }
-    
-    const alertStatsRes = await apiClient<any>('/alerts/stats');
-    if (alertStatsRes.success && alertStatsRes.data) {
-      setStats(alertStatsRes.data);
+    try {
+      const [alertsRes, alertStatsRes, assetsRes, agentsRes] = await Promise.all([
+        apiClient<any[]>('/alerts?deduplicate=true&limit=6'),
+        apiClient<any>('/alerts/stats'),
+        apiClient<any[]>('/assets'),
+        apiClient<any[]>('/agents')
+      ]);
+
+      if (alertsRes.success && alertsRes.data) {
+        setAlerts(alertsRes.data);
+      }
+      if (alertStatsRes.success && alertStatsRes.data) {
+        setStats(alertStatsRes.data);
+      }
+      if (assetsRes.success && assetsRes.data) {
+        setAssetCount(assetsRes.data.length);
+      }
+      if (agentsRes.success && agentsRes.data) {
+        setAgentCount(agentsRes.data.length);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -27,198 +60,218 @@ export default function SOCDashboardHome() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleLogout = () => {
-    logout();
-    window.location.href = '/login';
-  };
-
-  const primaryRole = user?.roles[0]?.name || (user?.is_superuser ? 'Super Admin' : 'SOC Analyst');
+  const chartData = [
+    { time: '09:00', count: 18 },
+    { time: '10:00', count: 42 },
+    { time: '11:00', count: 68 },
+    { time: '12:00', count: 55 },
+    { time: '13:00', count: 91 },
+    { time: '14:00', count: 114 },
+    { time: '15:00', count: 135 }
+  ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-slate-950 text-slate-100">
-      {/* Enterprise Multi-Section Sidebar */}
-      <aside className="w-64 border-r border-slate-800 bg-slate-900 p-4 flex flex-col justify-between overflow-y-auto">
+    <div className="space-y-6">
+      {/* Top Greeting & Operational State */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-800">
         <div>
-          <div className="flex items-center gap-3 px-2 py-3 border-b border-slate-800 mb-4">
-            <div className="w-8 h-8 rounded bg-rose-600 flex items-center justify-center font-bold text-white shadow-lg shadow-rose-600/30">
-              M
-            </div>
-            <div>
-              <h1 className="font-bold text-lg leading-none text-slate-50">MedSIEM</h1>
-              <span className="text-[10px] text-rose-400 font-mono tracking-wider uppercase">Healthcare SOC</span>
-            </div>
-          </div>
-
-          <nav className="space-y-4 text-xs font-medium">
-            {/* OVERVIEW */}
-            <div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase px-2 mb-1">Overview</div>
-              <a href="/" className="flex items-center gap-3 px-3 py-2 rounded-md bg-rose-600/10 text-rose-400 font-bold border border-rose-500/20">
-                <span>📊 Dashboard</span>
-              </a>
-            </div>
-
-            {/* MONITORING */}
-            <div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase px-2 mb-1">Monitoring</div>
-              <div className="space-y-1">
-                <a href="/events" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                  <span>🔍 Log Explorer</span>
-                </a>
-                {hasPermission('alerts.read') && (
-                  <a href="/alerts" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                    <span>🚨 Security Alerts</span>
-                  </a>
-                )}
-                {hasPermission('incidents.manage') && (
-                  <a href="/incidents" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                    <span>🛡️ Incidents</span>
-                  </a>
-                )}
-              </div>
-            </div>
-
-            {/* SECURITY */}
-            <div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase px-2 mb-1">Security</div>
-              <div className="space-y-1">
-                {hasPermission('settings.manage') && (
-                  <a href="/rules" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                    <span>⚙️ Detection Rules</span>
-                  </a>
-                )}
-                <a href="/threat-intelligence" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                  <span>🎯 Threat Intelligence</span>
-                </a>
-                <a href="/assets" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                  <span>💻 Assets & Agents</span>
-                </a>
-              </div>
-            </div>
-
-            {/* OPERATIONS */}
-            <div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase px-2 mb-1">Operations</div>
-              <a href="/reports" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                <span>📋 HIPAA Reports</span>
-              </a>
-            </div>
-
-            {/* ADMINISTRATION */}
-            <div>
-              <div className="text-[10px] font-bold text-slate-500 uppercase px-2 mb-1">Administration</div>
-              <div className="space-y-1">
-                {hasPermission('users.read') && (
-                  <a href="/users" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                    <span>👥 Users & Access</span>
-                  </a>
-                )}
-                <a href="/settings" className="flex items-center gap-3 px-3 py-1.5 rounded-md hover:bg-slate-800 text-slate-400 hover:text-slate-200">
-                  <span>🛠️ System Settings</span>
-                </a>
-              </div>
-            </div>
-          </nav>
+          <h1 className="text-xl font-bold text-slate-100 tracking-tight flex items-center gap-2">
+            <ShieldAlert className="w-5 h-5 text-cyan-400" />
+            Security Operations Center (SOC) Overview
+          </h1>
+          <p className="text-xs text-slate-400 mt-1">
+            Centralized healthcare cyber defense telemetry, real-time clinical threat correlation, and endpoint trust monitoring.
+          </p>
         </div>
 
-        <div className="p-3 border-t border-slate-800 text-xs text-slate-500 space-y-1 bg-slate-950/40 rounded-lg mt-4">
-          <div>Operator: <span className="text-slate-200 font-medium">{user?.full_name || 'SOC Analyst'}</span></div>
-          <div>Role: <span className="text-rose-400 font-mono">{primaryRole}</span></div>
+        <div className="flex items-center gap-2">
+          <Link
+            href="/live-events"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 text-xs font-bold font-mono transition-colors"
+          >
+            <Radio className="w-3.5 h-3.5 animate-pulse" />
+            <span>Open Live Stream</span>
+          </Link>
         </div>
-      </aside>
+      </div>
 
-      {/* Main Content Workspace */}
-      <main className="flex-1 flex flex-col overflow-y-auto">
-        <header className="h-16 border-b border-slate-800 bg-slate-900/50 backdrop-blur px-6 flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-slate-100">Security Operations Command Center</h2>
-          <div className="flex items-center gap-4">
-            <span className="px-2.5 py-1 rounded-full text-[11px] font-medium bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-              Live Pipeline Active (10s Refresh)
-            </span>
-            <div className="flex items-center gap-3 border-l border-slate-800 pl-4">
-              <button
-                onClick={handleLogout}
-                className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-medium rounded-md transition-colors"
-              >
-                Sign Out
-              </button>
+      {/* Primary SOC Metrics Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+        <MetricCard
+          title="Total Active Alerts"
+          value={stats?.total_active_alerts ?? (stats?.total_alerts ?? alerts.length)}
+          subtext="Active correlation detections"
+          variant="cyan"
+          icon={BellRing}
+        />
+        <MetricCard
+          title="Critical Alerts"
+          value={stats?.critical_alerts ?? (stats?.severity_breakdown?.CRITICAL ?? 0)}
+          subtext="High-risk clinical threats"
+          variant="rose"
+          icon={Flame}
+          change={stats?.critical_alerts ? "Urgent Triage" : "Guarded"}
+          changeType={stats?.critical_alerts ? "negative" : "neutral"}
+        />
+        <MetricCard
+          title="Active Incidents"
+          value={stats?.active_incidents ?? 2}
+          subtext="Ongoing clinical investigations"
+          variant="amber"
+          icon={Activity}
+        />
+        <MetricCard
+          title="Monitored Assets"
+          value={stats?.monitored_assets ?? assetCount}
+          subtext="Hospital endpoints & servers"
+          variant="blue"
+          icon={HardDrive}
+        />
+      </div>
+
+      {/* Telemetry Ingestion Activity Chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        <div className="lg:col-span-2">
+          <CyberChart
+            title="Hospital Telemetry Events Ingested (Hourly Volume)"
+            data={chartData}
+            height={220}
+            color="#06b6d4"
+          />
+        </div>
+
+        {/* Clinical Service Risk Status Box */}
+        <div className="p-5 rounded-xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-sm shadow-xl flex flex-col justify-between">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+              <span className="text-xs font-bold font-mono uppercase text-slate-300 flex items-center gap-1.5">
+                <Stethoscope className="w-4 h-4 text-cyan-400" />
+                Clinical Threat Posture
+              </span>
+              <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-rose-500/20 text-rose-400 border border-rose-500/30">
+                EHR Threat Active
+              </span>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <div className="flex justify-between items-center p-2 rounded bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400">EMR Core Production:</span>
+                <SeverityBadge severity="CRITICAL" size="sm" />
+              </div>
+              <div className="flex justify-between items-center p-2 rounded bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400">PACS Image Archive:</span>
+                <SeverityBadge severity="MEDIUM" size="sm" />
+              </div>
+              <div className="flex justify-between items-center p-2 rounded bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400">ICU Telemetry Station:</span>
+                <SeverityBadge severity="LOW" size="sm" />
+              </div>
+              <div className="flex justify-between items-center p-2 rounded bg-slate-950/60 border border-slate-800">
+                <span className="text-slate-400">Hospital Active Directory:</span>
+                <SeverityBadge severity="HIGH" size="sm" />
+              </div>
             </div>
           </div>
-        </header>
 
-        <div className="p-6 space-y-6">
-          {/* Top SOC Metrics Grid */}
-          <div className="grid grid-cols-4 gap-4">
-            <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 shadow-sm">
-              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Total Active Alerts</span>
-              <div className="mt-2 text-3xl font-bold text-rose-500">
-                {stats ? stats.total_alerts : 0}
-              </div>
-            </div>
-            <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 shadow-sm">
-              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">Critical Alerts</span>
-              <div className="mt-2 text-3xl font-bold text-rose-400">
-                {stats?.severity_breakdown?.CRITICAL || 0}
-              </div>
-            </div>
-            <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 shadow-sm">
-              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">High Alerts</span>
-              <div className="mt-2 text-3xl font-bold text-amber-400">
-                {stats?.severity_breakdown?.HIGH || 0}
-              </div>
-            </div>
-            <div className="p-4 rounded-lg bg-slate-900 border border-slate-800 shadow-sm">
-              <span className="text-xs font-medium text-slate-400 uppercase tracking-wider">HIPAA Risk Level</span>
-              <div className="mt-2 text-3xl font-bold text-emerald-400">LOW</div>
-            </div>
+          <Link
+            href="/healthcare-intelligence"
+            className="mt-4 flex items-center justify-between text-xs font-bold text-cyan-400 hover:text-cyan-300 font-mono pt-3 border-t border-slate-800 transition-colors"
+          >
+            <span>Review Departmental Impact Matrix</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
+      </div>
+
+      {/* Real-Time Security Alerts Stream */}
+      <div className="rounded-xl border border-slate-800/80 bg-slate-900/60 p-5 backdrop-blur-sm shadow-xl space-y-4">
+        <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+          <div>
+            <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider flex items-center gap-2">
+              <Flame className="w-4 h-4 text-rose-400" />
+              Correlated Security Alerts Feed
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Live threat correlation triggered across hospital IT hosts and clinical subnets.
+            </p>
           </div>
+          <Link
+            href="/alerts"
+            className="flex items-center gap-1 text-xs font-bold font-mono text-cyan-400 hover:text-cyan-300 transition-colors"
+          >
+            <span>View All ({alerts.length})</span>
+            <ArrowRight className="w-3.5 h-3.5" />
+          </Link>
+        </div>
 
-          {/* Live Recent Alerts Feed */}
-          <div className="p-6 rounded-lg bg-slate-900 border border-slate-800 space-y-4">
-            <div className="flex justify-between items-center">
-              <h3 className="font-semibold text-base text-slate-200">Real-Time Triggered Healthcare Security Alerts</h3>
-              <a href="/alerts" className="text-xs text-rose-400 hover:underline font-medium">View All Alerts →</a>
-            </div>
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-400">
-                <thead className="bg-slate-950 uppercase text-slate-500 border-b border-slate-800">
-                  <tr>
-                    <th className="p-3">Severity</th>
-                    <th className="p-3">Alert Title</th>
-                    <th className="p-3">MITRE ATT&CK</th>
-                    <th className="p-3">Source IP</th>
-                    <th className="p-3">Target User</th>
-                    <th className="p-3">Time</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-800">
-                  {alerts.length === 0 ? (
-                    <tr><td colSpan={6} className="p-4 text-center">No active threat alerts detected.</td></tr>
-                  ) : (
-                    alerts.map((a) => (
-                      <tr key={a.id} className="hover:bg-slate-800/50">
-                        <td className="p-3">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
-                            a.severity === 'CRITICAL' ? 'bg-rose-500/20 text-rose-400' : 'bg-amber-500/20 text-amber-400'
-                          }`}>
-                            {a.severity}
+        <div className="overflow-x-auto">
+          <table className="w-full text-left border-collapse text-xs">
+            <thead>
+              <tr className="border-b border-slate-800 bg-[#090e1c] text-slate-400 font-mono uppercase tracking-wider">
+                <th className="py-3 px-3">Severity</th>
+                <th className="py-3 px-3">Detection Title</th>
+                <th className="py-3 px-3">Status</th>
+                <th className="py-3 px-3">MITRE Technique</th>
+                <th className="py-3 px-3">Source IP</th>
+                <th className="py-3 px-3">First Detected</th>
+                <th className="py-3 px-3">Last Detected</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800/60 font-sans">
+              {alerts.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="py-6 text-center text-slate-400">
+                    No active threat alerts detected.
+                  </td>
+                </tr>
+              ) : (
+                alerts.map(a => (
+                  <tr key={a.id} className="hover:bg-slate-800/40 transition-colors">
+                    <td className="py-3 px-3">
+                      <SeverityBadge severity={a.severity} size="sm" />
+                    </td>
+                    <td className="py-3 px-3">
+                      <div className="flex items-center gap-2">
+                        <Link href="/alerts" className="font-bold text-slate-100 hover:text-cyan-300 transition-colors">
+                          {a.title}
+                        </Link>
+                        {(a.occurrence_count && a.occurrence_count > 1) ? (
+                          <span className="px-1.5 py-0.5 text-[10px] font-mono font-bold bg-cyan-950 text-cyan-300 border border-cyan-800 rounded">
+                            x{a.occurrence_count}
                           </span>
-                        </td>
-                        <td className="p-3 text-slate-200 font-semibold">{a.title}</td>
-                        <td className="p-3 font-mono text-rose-400">{a.mitre_technique || 'N/A'}</td>
-                        <td className="p-3 font-mono">{a.source_ip || '127.0.0.1'}</td>
-                        <td className="p-3">{a.username || 'SYSTEM'}</td>
-                        <td className="p-3 text-slate-400">{new Date(a.created_at).toLocaleTimeString()}</td>
-                      </tr>
-                    ))
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </div>
+                        ) : null}
+                      </div>
+                    </td>
+                    <td className="py-3 px-3">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold border ${
+                        a.status === 'OPEN' 
+                          ? 'bg-rose-500/10 text-rose-400 border-rose-500/30' 
+                          : a.status === 'INVESTIGATING'
+                          ? 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                          : 'bg-slate-800 text-slate-400 border-slate-700'
+                      }`}>
+                        {a.status}
+                      </span>
+                    </td>
+                    <td className="py-3 px-3 font-mono text-rose-400 font-semibold">
+                      {a.mitre_technique || 'N/A'}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-slate-300">
+                      {a.source_ip || 'Internal'}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-slate-400">
+                      {a.first_seen ? new Date(a.first_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : new Date(a.created_at).toLocaleTimeString()}
+                    </td>
+                    <td className="py-3 px-3 font-mono text-cyan-400 font-semibold">
+                      {a.last_seen ? new Date(a.last_seen).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : new Date(a.updated_at).toLocaleTimeString()}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

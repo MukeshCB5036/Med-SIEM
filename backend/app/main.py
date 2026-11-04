@@ -9,6 +9,7 @@ from app.modules.auth.router import router as auth_router
 from app.modules.assets.router import router as assets_router
 from app.modules.events.router import router as events_router
 from app.modules.detection.router import router as detection_router
+from app.modules.reports.router import router as reports_router
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
@@ -46,6 +47,7 @@ async def medsiem_exception_handler(request: Request, exc: MedSIEMException):
 
 
 @app.get("/health", tags=["Health"])
+@app.get(f"{settings.API_V1_STR}/health", tags=["Health"])
 def health_check():
     """Comprehensive system health check endpoint."""
     services_status = {
@@ -68,3 +70,4 @@ app.include_router(auth_router, prefix=settings.API_V1_STR)
 app.include_router(assets_router, prefix=settings.API_V1_STR)
 app.include_router(events_router, prefix=settings.API_V1_STR)
 app.include_router(detection_router, prefix=settings.API_V1_STR)
+app.include_router(reports_router, prefix=settings.API_V1_STR)

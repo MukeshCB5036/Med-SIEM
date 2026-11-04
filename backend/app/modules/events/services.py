@@ -1,5 +1,5 @@
 from uuid import UUID
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from app.modules.events.repositories import EventRepository
@@ -76,8 +76,17 @@ class EventService:
             results.append(self.ingest_single_log(log_req))
         return results
 
-    def get_events(self, skip: int = 0, limit: int = 50, hostname: Optional[str] = None, severity: Optional[str] = None) -> List[NormalizedEvent]:
-        return self.repo.get_events(skip, limit, hostname, severity)
+    def get_events(
+        self, 
+        skip: int = 0, 
+        limit: int = 50, 
+        hostname: Optional[str] = None, 
+        severity: Optional[str] = None,
+        source: Optional[str] = None,
+        category: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> Tuple[List[NormalizedEvent], int]:
+        return self.repo.get_events(skip, limit, hostname, severity, source, category, search)
 
     def get_event_by_id(self, event_id: UUID) -> NormalizedEvent:
         evt = self.repo.get_event_by_id(event_id)

@@ -7,11 +7,13 @@ from sqlalchemy.orm import Session
 from app.core.config import settings
 from app.core.email import email_service
 from app.modules.auth.repositories import AuthRepository
-from app.modules.auth.models import User, Role, Permission
+from app.modules.auth.models import User, Role, Permission, Notification
 from app.modules.auth.schemas import (
     LoginRequest, LoginResponse, Token, UserCreate, UserUpdate, 
     RoleCreate, RoleUpdate, ChangePasswordRequest,
-    VerifyEmailRequest, ResendVerificationRequest, VerifyOtpRequest
+    VerifyEmailRequest, ResendVerificationRequest, VerifyOtpRequest,
+    AuditLogResponse, AuditLogPaginationMeta, AuditLogListResponse,
+    NotificationResponse, NotificationCreate
 )
 from app.core.security import (
     verify_password, get_password_hash, 
@@ -282,3 +284,83 @@ class AuthService:
         if role.is_system_role:
             raise ValidationException("System roles cannot be deleted")
         self.repo.delete_role(role)
+
+    # Audit Logging
+    def get_audit_logs(
+        self,
+        page: int = 1,
+        page_size: int = 50,
+        action: Optional[str] = None,
+        user_id: Optional[UUID] = None,
+        start_date: Optional[datetime] = None,
+        end_date: Optional[datetime] = None,
+        search: Optional[str] = None
+    ) -> AuditLogListResponse:
+        logs, total = self.repo.get_audit_logs(
+            page=page,
+            page_size=page_size,
+            action=action,
+            user_id=user_id,
+            start_date=start_date,
+            end_date=end_date,
+            search=search
+        )
+        total_pages = (total + page_size - 1) // page_size if total > 0 else 1
+        items = []
+        for log in logs:
+            items.append(AuditLogResponse(
+                id=log.id,
+                user_id=log.user_id,
+                user_email=log.user.email if log.user else None,
+                user_full_name=log.user.full_name if log.user else None,
+                action=log.action,
+                ip_address=log.ip_address,
+                user_agent=log.user_agent,
+                details=log.details,
+                created_at=log.created_at
+            ))
+        return AuditLogListResponse(
+            items=items,
+            pagination=AuditLogPaginationMeta(
+                total=total,
+                page=page,
+                page_size=page_size,
+                total_pages=total_pages
+            )
+        )
+
+    # Notifications
+    def get_notifications(self, user_id: UUID, org_id: UUID, unread_only: bool = False) -> List[Notification]:
+        query = self.repo.db.query(Notification).filter(
+            Notification.org_id == org_id,
+            (Notification.user_id == user_id) | (Notification.user_id == None)
+        )
+        if unread_only:
+            query = query.filter(Notification.is_read == False)
+        return query.order_by(Notification.created_at.desc()).limit(100).all()
+
+    def mark_notification_read(self, notification_id: UUID) -> Notification:
+        notif = self.repo.db.query(Notification).filter(Notification.id == notification_id).first()
+        if not notif:
+            raise EntityNotFoundException("Notification", notification_id)
+        notif.is_read = True
+        self.repo.db.commit()
+        self.repo.db.refresh(notif)
+        return notif
+
+    def create_notification(self, org_id: UUID, notif_data: NotificationCreate) -> Notification:
+        notif = Notification(
+            org_id=org_id,
+            user_id=notif_data.user_id,
+            title=notif_data.title,
+            message=notif_data.message,
+            severity=notif_data.severity,
+            category=notif_data.category,
+            link=notif_data.link,
+            is_read=False
+        )
+        self.repo.db.add(notif)
+        self.repo.db.commit()
+        self.repo.db.refresh(notif)
+        return notif
+

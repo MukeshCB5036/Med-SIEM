@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
-from typing import Optional, List
-from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Table, Text, Integer, Enum as SQLEnum
+from typing import Optional, List, Dict, Any
+from sqlalchemy import Column, String, Boolean, DateTime, ForeignKey, Table, Text, Integer, JSON, Enum as SQLEnum
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import relationship
 import enum
@@ -83,6 +83,18 @@ class Alert(Base):
     resolution_notes = Column(Text, nullable=True)
     is_false_positive = Column(Boolean, default=False, nullable=False)
 
+    # Explainable Detection Foundation Fields
+    matched_conditions = Column(JSON, nullable=True) # Structured conditions matched
+    supporting_events = Column(JSON, nullable=True) # Supporting telemetry evidence
+    detection_timestamp = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=True)
+    severity_rationale = Column(Text, nullable=True) # Clinical & security rationale for severity score
+
+    # Correlation and Deduplication Fields
+    correlation_key = Column(String(128), nullable=True, index=True)
+    occurrence_count = Column(Integer, default=1, nullable=False)
+    first_seen = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=True)
+    last_seen = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=True)
+
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
 
@@ -104,7 +116,7 @@ class Incident(Base):
     description = Column(Text, nullable=True)
     severity = Column(SQLEnum(AlertSeverity), default=AlertSeverity.HIGH, nullable=False, index=True)
     status = Column(SQLEnum(IncidentStatus), default=IncidentStatus.OPEN, nullable=False, index=True)
-    
+
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False, index=True)
     updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc), nullable=False)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
@@ -125,3 +137,7 @@ class IncidentComment(Base):
 
     incident = relationship("Incident", back_populates="comments")
     user = relationship("User")
+
+
+# Entity alias for IncidentNote specified in database foundation requirements
+IncidentNote = IncidentComment

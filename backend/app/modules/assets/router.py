@@ -4,11 +4,13 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.orm import Session
 from app.core.database import get_db
 from app.modules.auth.dependencies import get_current_user, PermissionChecker
+from app.modules.auth.models import User
 from app.modules.assets.schemas import (
     AssetCreate, AssetUpdate, AssetResponse,
     AssetGroupCreate, AssetGroupResponse,
     AgentRegisterRequest, AgentRegisterResponse,
-    AgentHeartbeatRequest, AgentHeartbeatResponse, AgentResponse
+    AgentHeartbeatRequest, AgentHeartbeatResponse, AgentResponse,
+    EnrollmentTokenCreate, EnrollmentTokenResponse
 )
 from app.modules.assets.services import AssetService
 
@@ -107,6 +109,47 @@ def list_agents(db: Session = Depends(get_db)):
     return {"success": True, "data": [AgentResponse.model_validate(a) for a in agents]}
 
 
+# ==============================================================================
+# ENROLLMENT TOKEN ENDPOINTS (Defined before /agents/{id} to avoid path collision)
+# ==============================================================================
+
+@router.post(
+    "/agents/enrollment-tokens", 
+    response_model=dict, 
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(PermissionChecker("users.create"))]
+)
+def create_enrollment_token(
+    token_data: EnrollmentTokenCreate, 
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """Generate a secure pre-shared enrollment token for new endpoint agents."""
+    service = AssetService(db)
+    if not token_data.org_id or str(token_data.org_id) == "00000000-0000-0000-0000-000000000000":
+        token_data.org_id = current_user.org_id
+    res = service.create_enrollment_token(token_data, user_id=current_user.id)
+    return {"success": True, "data": res.model_dump()}
+
+
+@router.get(
+    "/agents/enrollment-tokens", 
+    response_model=dict,
+    dependencies=[Depends(PermissionChecker("users.read"))]
+)
+def list_enrollment_tokens(
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    """List configured endpoint agent enrollment tokens."""
+    service = AssetService(db)
+    tokens = service.get_enrollment_tokens(org_id=current_user.org_id)
+    return {
+        "success": True, 
+        "data": [EnrollmentTokenResponse.model_validate(t).model_dump() for t in tokens]
+    }
+
+
 @router.get("/agents/{id}", response_model=dict, dependencies=[Depends(PermissionChecker("users.read"))])
 def get_agent_by_id(id: UUID, db: Session = Depends(get_db)):
     """Get agent details by ID."""
@@ -121,3 +164,5 @@ def revoke_agent(id: UUID, db: Session = Depends(get_db)):
     service = AssetService(db)
     agent = service.revoke_agent(id)
     return {"success": True, "data": AgentResponse.model_validate(agent)}
+
+

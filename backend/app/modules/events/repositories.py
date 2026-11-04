@@ -1,4 +1,4 @@
-from typing import Optional, List, Dict, Any
+from typing import Optional, List, Dict, Any, Tuple
 from uuid import UUID
 from datetime import datetime, timezone
 from sqlalchemy.orm import Session
@@ -68,13 +68,40 @@ class EventRepository:
 
         return event
 
-    def get_events(self, skip: int = 0, limit: int = 50, hostname: Optional[str] = None, severity: Optional[str] = None) -> List[NormalizedEvent]:
+    def get_events(
+        self, 
+        skip: int = 0, 
+        limit: int = 50, 
+        hostname: Optional[str] = None, 
+        severity: Optional[str] = None,
+        source: Optional[str] = None,
+        category: Optional[str] = None,
+        search: Optional[str] = None
+    ) -> Tuple[List[NormalizedEvent], int]:
         query = self.db.query(NormalizedEvent)
         if hostname:
             query = query.filter(NormalizedEvent.hostname.ilike(f"%{hostname}%"))
         if severity:
             query = query.filter(NormalizedEvent.severity == severity)
-        return query.order_by(NormalizedEvent.timestamp.desc()).offset(skip).limit(limit).all()
+        if source:
+            query = query.filter(NormalizedEvent.source.ilike(f"%{source}%"))
+        if category:
+            query = query.filter(NormalizedEvent.event_category.ilike(f"%{category}%"))
+        if search:
+            search_pattern = f"%{search}%"
+            query = query.filter(
+                or_(
+                    NormalizedEvent.hostname.ilike(search_pattern),
+                    NormalizedEvent.message.ilike(search_pattern),
+                    NormalizedEvent.event_type.ilike(search_pattern),
+                    NormalizedEvent.source_ip.ilike(search_pattern),
+                    NormalizedEvent.username.ilike(search_pattern),
+                    NormalizedEvent.source.ilike(search_pattern)
+                )
+            )
+        total_count = query.count()
+        events = query.order_by(NormalizedEvent.timestamp.desc()).offset(skip).limit(limit).all()
+        return events, total_count
 
     def get_event_by_id(self, event_id: UUID) -> Optional[NormalizedEvent]:
         return self.db.query(NormalizedEvent).filter(NormalizedEvent.id == event_id).first()
@@ -84,14 +111,24 @@ class EventRepository:
 
     def search_opensearch(self, query_str: str, limit: int = 50) -> List[Dict[str, Any]]:
         try:
-            body = {
-                "query": {
+            clean_q = (query_str or "").strip()
+            if not clean_q or clean_q in ["*", "*:*"]:
+                query_body = {"match_all": {}}
+            else:
+                query_body = {
                     "multi_match": {
-                        "query": query_str,
-                        "fields": ["hostname", "username", "event_type", "message"]
+                        "query": clean_q,
+                        "fields": [
+                            "hostname", "username", "event_type", "event_category", 
+                            "severity", "source", "source_ip", "destination_ip", 
+                            "process_name", "message"
+                        ]
                     }
-                },
-                "size": limit
+                }
+            body = {
+                "query": query_body,
+                "size": limit,
+                "sort": [{"timestamp": {"order": "desc"}}]
             }
             res = opensearch_client.search(index=INDEX_NAME, body=body)
             return [hit["_source"] for hit in res["hits"]["hits"]]
